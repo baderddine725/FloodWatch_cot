@@ -121,4 +121,5 @@ Decorator (filtre médian du prédicteur), Repository, DTO, Singleton (client MQ
 
 Voir aussi : [architecture](docs/architecture.md) · [topics MQTT](docs/mqtt-topics.md) ·
 [corrections du code de départ](docs/corrections-code-depart.md) · [guide citoyen](docs/guide-citoyen.md) ·
-[guide pilotage](docs/guide-pilotage.md) · [répartition du travail](docs/repartition.md)
+[guide pilotage](docs/guide-pilotage.md) · [répartition du travail](docs/repartition.md) ·
+[partie Back-end & IoT : passerelle, brokers, TD WoT, prédiction](README-backend-iot.md)

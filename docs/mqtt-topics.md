@@ -13,8 +13,9 @@ Racine : `floodwatch/stations/{code}/…` (`code` = identifiant de la station, e
 | `…/ack` | → Cloud | 1 | non | `{"id":"<uuid commande>","ok":false,"detail":"verrouillage sécurité"}` |
 | `…/cmd` | Cloud → station | 1 | non | `{"id":"<uuid>","actuator":"barrier","value":"CLOSE","ts":1793640000000}` |
 | `…/config` | Cloud → station | 1 | **oui** | seuils : `criticalCm, yellowPct, orangePct, redPct, rainThreshold, reopenDelaySec, sensorHeightCm, periodNormalSec, periodWatchSec, heartbeatSec` |
-| `floodwatch/gateways/{gw}/events` | passerelle → Cloud | 1 | non | `{"type":"station_mute","station":"wadi-01","silentSec":46}` / `station_back` / `gateway_alive` |
-| `floodwatch/gateways/{gw}/bridge` | Mosquitto (notification de pont) | 1 | oui | `1` connecté / `0` déconnecté |
+| `…/td` | → Cloud, à chaque connexion | 1 | **oui** | Thing Description W3C WoT 1.1 de la station (exemples : `docs/wot/`). Non lue par le middleware |
+| `floodwatch/gateways/{gw}/events` | passerelle → Cloud | 1 | non | `{"type":"station_mute","station":"wadi-01","silentSec":46}` / `station_back` / `gateway_alive` / `local_safety` (règle 85 % de la passerelle) |
+| `floodwatch/gateways/{gw}/bridge` | Node-RED (naissance / LWT) ou pont Mosquitto | 1 | oui | `1` connecté / `0` déconnecté |
 
 Actionneurs et valeurs : `barrier` OPEN|CLOSE · `light` GREEN|ORANGE|RED|OFF · `siren` ON|OFF · `sampling` NORMAL|WATCH.
 
@@ -25,6 +26,7 @@ Règles côté station (firmware et simulateur) :
 - période de mesure : 5 s si pluie, niveau ≥ jaune ou `sampling=WATCH`, sinon 30 s.
 
 Sécurité : broker local accessible en Wi-Fi WPA2 avec authentification et ACL par station
-(`pattern readwrite floodwatch/stations/%u/#`). Pont passerelle → Cloud en TLS 1.2+ sur le port 8883,
-session persistante (messages mis en file pendant une coupure). Le listener 1883 du Cloud n'est
-accessible que depuis le réseau Docker interne (API).
+(la station `%u` publie seulement ses propres topics montants et lit seulement ses `cmd` / `config`,
+cf. `gateway/mosquitto/floodwatch.acl`). Relais passerelle → Cloud par Node-RED en **TLS 1.3** sur le
+port 8883, avec file d'attente persistante pendant une coupure (le pont Mosquitto reste disponible en repli).
+Le listener 1883 du Cloud n'est accessible que depuis le réseau Docker interne (API).
