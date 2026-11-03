@@ -11,3 +11,6 @@ __pycache__/
 .idea/
 *.iml
 .DS_Store
+
+# Maquette Figma Make (référence locale, non déployée)
+figma_ai_demo/
