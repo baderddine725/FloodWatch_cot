@@ -1,0 +1,87 @@
+# =============================================================================
+#  FloodWatch – déploiement Cloud (machine virtuelle IaaS)
+#  Usage : cp .env.example .env && ./scripts/gen-certs.sh <domaine> && docker compose up -d --build
+#  Équipe FloodWatch – v1.0 – 2026-11-02
+# =============================================================================
+name: floodwatch
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-floodwatch}
+      POSTGRES_USER: ${DB_USER:-floodwatch}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-floodwatch} -d ${DB_NAME:-floodwatch}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/mosquitto/config/entrypoint.sh"]
+    environment:
+      MQTT_API_USERNAME: ${MQTT_API_USERNAME:-floodwatch-api}
+      MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:?MQTT_API_PASSWORD}
+      MQTT_GATEWAY_USERNAME: ${MQTT_GATEWAY_USERNAME:-gateway}
+      MQTT_GATEWAY_PASSWORD: ${MQTT_GATEWAY_PASSWORD:?MQTT_GATEWAY_PASSWORD}
+    volumes:
+      - ./mosquitto:/mosquitto/config:ro
+      - ./certs:/mosquitto/certs:ro
+      - mqttdata:/mosquitto/data
+    ports:
+      - "8883:8883"
+
+  api:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_NAME: ${DB_NAME:-floodwatch}
+      DB_USER: ${DB_USER:-floodwatch}
+      DB_PASSWORD: ${DB_PASSWORD}
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_BROKER_USERNAME: ${MQTT_API_USERNAME:-floodwatch-api}
+      MQTT_BROKER_PASSWORD: ${MQTT_API_PASSWORD}
+      MQTT_PUBLIC_URL: mqtts://${SERVER_NAME}:8883
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD}
+      OPERATOR_USERNAME: ${OPERATOR_USERNAME:-operator}
+      OPERATOR_PASSWORD: ${OPERATOR_PASSWORD:?OPERATOR_PASSWORD}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:floodwatch@supcom.tn}
+      CORS_ALLOWED_ORIGINS: https://${SERVER_NAME}
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-localhost}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./certbot:/var/www/certbot:ro
+      - ../pwa:/usr/share/nginx/pwa:ro
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  pgdata:
+  mqttdata:

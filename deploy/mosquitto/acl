@@ -1,0 +1,8 @@
+# Middleware (API Jakarta EE)
+user floodwatch-api
+topic readwrite floodwatch/#
+
+# Passerelles / stations directes / simulateur
+user gateway
+topic readwrite floodwatch/stations/#
+topic write floodwatch/gateways/#

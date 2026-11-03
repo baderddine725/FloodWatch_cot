@@ -1,0 +1,13 @@
+# FloodWatch
+deploy/.env
+deploy/certs/
+deploy/letsencrypt/
+deploy/certbot/
+firmware/.pio/
+firmware/include/station_config.h
+**/target/
+**/node_modules/
+__pycache__/
+.idea/
+*.iml
+.DS_Store

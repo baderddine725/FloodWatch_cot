@@ -1,0 +1,26 @@
+/* FloodWatch – PWA Citoyen. Auteur : Kamoun Ahmed – v1.0 */
+.layout { display: grid; grid-template-rows: 42vh auto; min-height: calc(100vh - 54px); }
+.map { min-height: 260px; z-index: 1; }
+.panel { padding: 14px; display: grid; gap: 12px; align-content: start; max-width: 760px; width: 100%; margin: 0 auto; }
+.headline { font-size: 1.15rem; }
+.closed-badge { background: var(--red); color: #fff; border-radius: 12px; padding: 8px 12px; font-weight: 700; text-align: center; line-height: 1.1; }
+.closed-badge small { display: block; font-weight: 500; font-size: .72rem; opacity: .9; }
+.notify { margin-top: 12px; flex-wrap: nowrap; }
+.notify .btn { flex: 1; }
+.radius { width: 92px; flex: none; padding: 8px 9px; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pt { display: grid; grid-template-columns: 6px 1fr; overflow: hidden; cursor: pointer; }
+.pt .stripe { background: var(--grey); }
+.pt .body { padding: 12px 14px; display: grid; gap: 6px; }
+.pt h2 { font-size: 1rem; }
+.pt .meta { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: .82rem; color: var(--ink-2); }
+.pt .warn { font-weight: 650; color: var(--red); font-size: .88rem; }
+.pt.closed { border-color: #f2b8c0; }
+.legend ul { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; font-size: .88rem; }
+.legend summary { cursor: pointer; font-weight: 600; }
+.foot { text-align: center; padding: 6px 0 20px; }
+@media (min-width: 900px) {
+  .layout { grid-template-rows: none; grid-template-columns: 1fr 440px; height: calc(100vh - 54px); }
+  .map { height: 100%; }
+  .panel { overflow-y: auto; max-width: none; }
+}

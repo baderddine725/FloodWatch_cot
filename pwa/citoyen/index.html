@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<!-- FloodWatch – PWA Citoyen (front-office). Équipe FloodWatch – Auteur : Kamoun Ahmed – v1.0 – 2026-11-02 -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FloodWatch Citoyen – routes inondables</title>
+  <meta name="description" content="État en temps réel des passages inondables et alertes de crue près de vous.">
+  <meta name="theme-color" content="#0b4f8a">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="./shared/fw.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span id="logo"></span><div>FloodWatch<small>Citoyen</small></div></div>
+    <div class="spacer"></div>
+    <span id="live" class="live">Connexion…</span>
+  </header>
+  <div id="offline" class="banner hidden">Hors connexion : affichage des dernières informations connues.</div>
+  <div id="demo-banner" class="banner demo hidden">Mode démonstration : données simulées. <a href="?demo=0">Quitter</a></div>
+
+  <main class="layout">
+    <section id="map" class="map" aria-label="Carte des points surveillés"></section>
+    <section class="panel">
+      <div class="summary card pad">
+        <div class="row between">
+          <div>
+            <h1 id="headline" class="headline">Chargement…</h1>
+            <p id="subline" class="muted small">&nbsp;</p>
+          </div>
+        </div>
+        <div class="notify row">
+          <button id="notify" class="btn primary">🔔 Recevoir les alertes près de moi</button>
+          <select id="radius" class="input radius" aria-label="Rayon des alertes">
+            <option value="2">2 km</option><option value="5" selected>5 km</option><option value="10">10 km</option><option value="25">25 km</option>
+          </select>
+        </div>
+        <p id="notify-state" class="small muted"></p>
+      </div>
+      <ul id="list" class="list" aria-live="polite"></ul>
+      <details class="card pad legend">
+        <summary>Que signifient les couleurs ?</summary>
+        <ul>
+          <li><span class="chip lvl-GREEN"><span class="dot"></span>Praticable</span> niveau normal.</li>
+          <li><span class="chip lvl-YELLOW"><span class="dot"></span>Surveillance</span> pluie détectée, le point est surveillé de près.</li>
+          <li><span class="chip lvl-ORANGE"><span class="dot"></span>Prudence</span> montée des eaux : évitez si possible.</li>
+          <li><span class="chip lvl-RED"><span class="dot"></span>Fermé</span> barrière baissée : <strong>ne vous engagez jamais</strong>, empruntez un autre itinéraire.</li>
+          <li><span class="chip lvl-OFF"><span class="dot"></span>Indisponible</span> station hors ligne : prudence.</li>
+        </ul>
+        <p class="small muted">Les estimations sont indicatives. Respectez toujours la signalisation et les consignes de la protection civile (198).</p>
+      </details>
+      <footer class="foot small muted">
+        <span id="updated">&nbsp;</span> · <a href="pilotage/">Espace opérateurs</a>
+      </footer>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

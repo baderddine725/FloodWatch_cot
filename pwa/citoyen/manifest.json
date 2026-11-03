@@ -1,0 +1,18 @@
+{
+  "name": "FloodWatch Citoyen – état des routes inondables",
+  "short_name": "FloodWatch",
+  "description": "Carte en temps réel des passages inondables praticables ou fermés et alertes géolocalisées.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f6f9",
+  "theme_color": "#0b4f8a",
+  "categories": ["navigation", "weather", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

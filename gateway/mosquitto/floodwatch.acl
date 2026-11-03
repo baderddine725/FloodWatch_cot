@@ -1,0 +1,9 @@
+# ACL du broker local de la passerelle : chaque station n'accède qu'à ses propres topics.
+# Le nom d'utilisateur MQTT d'une station est son code (ex. underpass-01) :
+#   sudo mosquitto_passwd /etc/mosquitto/floodwatch.passwd underpass-01
+pattern write fw/raw/%u/#
+pattern readwrite floodwatch/stations/%u/#
+
+# Compte de diagnostic (lecture seule)
+user diag
+topic read #

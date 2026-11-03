@@ -1,0 +1,82 @@
+# =============================================================================
+#  FloodWatch – reverse proxy Nginx (TLS)
+#    /            PWA Citoyen        (pwa/citoyen)
+#    /pilotage/   PWA Pilotage       (pwa/pilotage)
+#    /shared/     ressources communes (pwa/shared)
+#    /api/        API REST  -> WildFly http://api:8080/floodwatch/api/
+#    /ws/         WebSocket -> WildFly http://api:8080/floodwatch/ws/
+#  ${SERVER_NAME} est substitué au démarrage du conteneur (image officielle nginx).
+#  Équipe FloodWatch – v1.0 – 2026-11-02
+# =============================================================================
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate     /etc/nginx/certs/server.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    root /usr/share/nginx/pwa/citoyen;
+    index index.html;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location /api/ {
+        proxy_pass http://api:8080/floodwatch/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+        client_max_body_size 1m;
+    }
+
+    location /ws/ {
+        proxy_pass http://api:8080/floodwatch/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    # Service Workers : jamais mis en cache par le navigateur (mises à jour immédiates)
+    location = /sw.js {
+        add_header Cache-Control "no-cache" always;
+    }
+    location = /pilotage/sw.js {
+        alias /usr/share/nginx/pwa/pilotage/sw.js;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location ^~ /pilotage/ {
+        alias /usr/share/nginx/pwa/pilotage/;
+        index index.html;
+    }
+
+    location ^~ /shared/ {
+        alias /usr/share/nginx/pwa/shared/;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
