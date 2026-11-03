@@ -1,8 +1,33 @@
-# Middleware (API Jakarta EE)
+# =============================================================================
+#  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Couche    : broker Cloud – back-end & IoT
+#  Fichier   : deploy/mosquitto/acl
+#  Équipe    : FloodWatch – Auteur : Ksontini Amine
+#  Créé le   : 2026-11-02          Modifié le : 2026-11-03          Version : 1.1
+#  Rôle      : ACL du broker Cloud. Tout ce qui n'est pas autorisé ici est refusé.
+#  v1.1      : moindre privilège pour « gateway » (ne peut plus publier de commande ni de
+#              configuration) ; compte « observer » en lecture seule.
+# =============================================================================
+
+# Middleware (API Jakarta EE) : inchangé
 user floodwatch-api
 topic readwrite floodwatch/#
 
-# Passerelles / stations directes / simulateur
+# Passerelles Node-RED (et simulateur / stations connectés en direct) :
+# publient les messages montants, lisent commandes et configuration.
 user gateway
-topic readwrite floodwatch/stations/#
+topic write floodwatch/stations/+/telemetry
+topic write floodwatch/stations/+/heartbeat
+topic write floodwatch/stations/+/state
+topic write floodwatch/stations/+/status
+topic write floodwatch/stations/+/ack
+topic write floodwatch/stations/+/td
+topic read floodwatch/stations/+/cmd
+topic read floodwatch/stations/+/config
 topic write floodwatch/gateways/#
+
+# Observateur (MQTT Explorer, démonstration) : lecture seule. Créé seulement si
+# MQTT_OBSERVER_PASSWORD est défini.
+user observer
+topic read floodwatch/#
+topic read $SYS/#

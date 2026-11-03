@@ -4,15 +4,15 @@
     "type": "tab",
     "label": "FloodWatch – Passerelle",
     "disabled": false,
-    "info": "Passerelle IoT FloodWatch (Raspberry Pi).\n\n- Valide et filtre la télémétrie brute des stations (fw/raw/+/telemetry)\n- Republie vers floodwatch/stations/<code>/telemetry (pontée vers le Cloud par Mosquitto)\n- Détecte localement les stations muettes et publie floodwatch/gateways/<gw>/events\n\nVariables d'environnement : GATEWAY_ID, MQTT_LOCAL_HOST, MQTT_LOCAL_PORT, MUTE_AFTER_SEC"
+    "info": "Module : Cloud of Things – FloodWatch (Sup'Com 2026-2027) — Fichier : gateway/node-red/flows.json\nÉquipe : FloodWatch — Auteur : Ksontini Amine — Créé le 2026-11-02, modifié le 2026-11-03 — Version 1.1\n\nPasserelle IoT FloodWatch (Raspberry Pi ou conteneur Docker) :\n1. Télémétrie brute (fw/raw/+/telemetry) : rejet des aberrations (écho isolé > SPIKE_CM de la médiane),\n   moyenne glissante (AVG_WINDOW mesures), horodatage (ts) et position GPS (gateway/stations.json).\n2. Relais local -> Cloud : telemetry, heartbeat, state, status (LWT), ack, td ; Cloud -> local : cmd, config.\n3. File d'attente persistante quand le Cloud est coupé (renvoi dans l'ordre à la reconnexion).\n4. Chien de garde : station muette > MUTE_AFTER_SEC (60 s) -> événement station_mute.\n5. Règle de sécurité locale : niveau filtré > SAFETY_PCT (85 %) du critique -> CLOSE + RED sur le broker\n   local, même sans Cloud.\n6. GET /health : état de la passerelle (broker local, Cloud, file d'attente, stations).\n\nContrat MQTT : celui du middleware (docs/mqtt-topics.md). Configuration : variables d'environnement,\nvalidées au démarrage par settings.js."
   },
   {
     "id": "fw_local_broker",
     "type": "mqtt-broker",
-    "name": "Mosquitto local (127.0.0.1)",
-    "broker": "${MQTT_LOCAL_HOST}",
-    "port": "${MQTT_LOCAL_PORT}",
-    "clientid": "node-red-gateway",
+    "name": "Mosquitto local (stations)",
+    "broker": "${LOCAL_MQTT_HOST}",
+    "port": "${LOCAL_MQTT_PORT}",
+    "clientid": "${GATEWAY_ID}-local",
     "autoConnect": true,
     "usetls": false,
     "protocolVersion": "4",
@@ -20,7 +20,8 @@
     "cleansession": true,
     "autoUnsubscribe": true,
     "birthTopic": "",
-    "birthQos": "0",
+    "birthQos": "1",
+    "birthRetain": "true",
     "birthPayload": "",
     "birthMsg": {},
     "closeTopic": "",
@@ -28,11 +29,67 @@
     "closePayload": "",
     "closeMsg": {},
     "willTopic": "",
-    "willQos": "0",
+    "willQos": "1",
+    "willRetain": "true",
     "willPayload": "",
     "willMsg": {},
     "userProps": "",
     "sessionExpiry": ""
+  },
+  {
+    "id": "fw_cloud_broker",
+    "type": "mqtt-broker",
+    "name": "Mosquitto Cloud (TLS)",
+    "broker": "${CLOUD_MQTT_HOST}",
+    "port": "${CLOUD_MQTT_PORT}",
+    "clientid": "${GATEWAY_ID}",
+    "autoConnect": true,
+    "usetls": true,
+    "protocolVersion": "4",
+    "keepalive": "30",
+    "cleansession": false,
+    "autoUnsubscribe": true,
+    "birthTopic": "${GATEWAY_BRIDGE_TOPIC}",
+    "birthQos": "1",
+    "birthRetain": "true",
+    "birthPayload": "1",
+    "birthMsg": {},
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "closeMsg": {},
+    "willTopic": "${GATEWAY_BRIDGE_TOPIC}",
+    "willQos": "1",
+    "willRetain": "true",
+    "willPayload": "0",
+    "willMsg": {},
+    "userProps": "",
+    "sessionExpiry": "",
+    "tls": "fw_cloud_tls"
+  },
+  {
+    "id": "fw_cloud_tls",
+    "type": "tls-config",
+    "name": "AC FloodWatch (TLS 1.3)",
+    "cert": "",
+    "key": "",
+    "ca": "${CLOUD_CA_FILE}",
+    "certname": "",
+    "keyname": "",
+    "caname": "",
+    "servername": "",
+    "verifyservercert": true,
+    "alpnprotocol": ""
+  },
+  {
+    "id": "fw_c1",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "1. Télémétrie : aberrations, moyenne glissante, horodatage + GPS",
+    "info": "",
+    "x": 230,
+    "y": 40,
+    "wires": []
   },
   {
     "id": "fw_in_raw",
@@ -47,7 +104,7 @@
     "rap": true,
     "rh": 0,
     "inputs": 0,
-    "x": 150,
+    "x": 140,
     "y": 100,
     "wires": [
       [
@@ -60,46 +117,31 @@
     "id": "fw_fn_validate",
     "type": "function",
     "z": "fw_tab",
-    "name": "Valider, filtrer, enrichir",
-    "func": "// Validation, filtrage (médiane glissante sur 3 mesures) et enrichissement de la télémétrie brute.\n// Entrée : fw/raw/<code>/telemetry  ->  Sortie : floodwatch/stations/<code>/telemetry\nconst code = msg.topic.split('/')[2];\nlet data;\ntry { data = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload; }\ncatch (e) { node.warn(`JSON invalide de ${code}`); return null; }\nconst cfg = (flow.get('configs') || {})[code] || {};\nconst sensorHeight = Number(cfg.sensorHeightCm || 30);\nconst level = Number(data.levelCm);\nconst rain = Math.min(1, Math.max(0, Number(data.rain || 0)));\nconst plausible = Number.isFinite(level) && level >= -2 && level <= sensorHeight + 2 && data.sensorOk !== false;\nconst out = { levelCm: null, rain: rain, sensorOk: plausible, gw: env.get('GATEWAY_ID') || 'gw-01', seq: data.seq };\nif (plausible) {\n    const hist = flow.get('hist') || {};\n    const h = (hist[code] || []).concat([level]).slice(-3);\n    hist[code] = h; flow.set('hist', hist);\n    const sorted = [...h].sort((a, b) => a - b);\n    out.levelCm = Math.round(sorted[Math.floor(sorted.length / 2)] * 100) / 100;\n    out.rawLevelCm = level;\n} else {\n    out.levelCm = Number.isFinite(level) ? level : -1;\n    node.warn(`Mesure rejetée pour ${code} : ${data.levelCm}`);\n}\nnode.status({ fill: plausible ? 'green' : 'red', shape: 'dot', text: `${code} ${out.levelCm} cm` });\nreturn { topic: `floodwatch/stations/${code}/telemetry`, payload: JSON.stringify(out), qos: 1 };",
-    "outputs": 1,
+    "name": "Filtrer et enrichir",
+    "func": "// Filtrage de la télémétrie brute d'une station.\n// Entrée  : fw/raw/<code>/telemetry (ou floodwatch/stations/<code>/telemetry en mode direct)\n// Sortie 1: floodwatch/stations/<code>/telemetry -> file d'attente Cloud\n// Sortie 2: mesure filtrée -> règle de sécurité locale\nconst code = msg.topic.split('/')[2];\nlet data;\ntry { data = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload; }\ncatch (e) { node.warn(JSON.stringify({ event: 'invalid_json', station: code })); return null; }\n\nconst reg = (global.get('stations') || {})[code] || {};\nconst cfg = (flow.get('configs') || {})[code] || {};\nconst SPIKE = Number(env.get('SPIKE_CM'));\nconst WINDOW = Number(env.get('AVG_WINDOW'));\nconst sensorHeight = Number(cfg.sensorHeightCm || reg.sensorHeightCm || 30);\nconst level = Number(data.levelCm);\nconst now = Date.now();\nconst topic = `floodwatch/stations/${code}/telemetry`;\nconst base = {\n    rain: Math.min(1, Math.max(0, Number(data.rain || 0))),\n    seq: data.seq, ts: now, gw: env.get('GATEWAY_ID'), zone: reg.zone || env.get('GATEWAY_ZONE'),\n    gps: reg.lat !== undefined ? { lat: reg.lat, lon: reg.lon } : undefined\n};\nconst round2 = v => Math.round(v * 100) / 100;\nconst median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };\n\n// 1. Mesure physiquement impossible ou capteur en défaut : transmise telle quelle (sensorOk=false)\n//    pour que le middleware lève l'alerte « capteur défaillant ».\nconst plausible = Number.isFinite(level) && level >= -2 && level <= sensorHeight + 2 && data.sensorOk !== false;\nif (!plausible) {\n    node.warn(JSON.stringify({ event: 'sensor_fault', station: code, levelCm: data.levelCm }));\n    node.status({ fill: 'red', shape: 'dot', text: `${code} capteur en défaut` });\n    return [{ topic, qos: 1, payload: JSON.stringify({ ...base, levelCm: Number.isFinite(level) ? level : -1, sensorOk: false }) }, null];\n}\n\n// 2. Rejet des aberrations : une valeur à plus de SPIKE cm de la médiane des 3 dernières est un\n//    écho parasite (HC-SR04). Deux valeurs proches de suite confirment un vrai changement de niveau.\nconst all = flow.get('filter') || {};\nconst s = all[code] || { window: [], pending: null, rejected: 0 };\nif (s.window.length >= 3 && Math.abs(level - median(s.window.slice(-3))) > SPIKE) {\n    if (s.pending === null || Math.abs(level - s.pending) > SPIKE) {\n        s.pending = level;\n        s.rejected += 1;\n        all[code] = s; flow.set('filter', all);\n        node.log(JSON.stringify({ event: 'outlier_rejected', station: code, levelCm: level, rejected: s.rejected }));\n        node.status({ fill: 'yellow', shape: 'ring', text: `${code} aberration rejetée (${level} cm)` });\n        return null;\n    }\n    s.window.push(s.pending); // changement confirmé\n}\ns.pending = null;\n\n// 3. Moyenne glissante sur les WINDOW dernières valeurs retenues\ns.window = s.window.concat([level]).slice(-WINDOW);\nall[code] = s; flow.set('filter', all);\nconst avg = round2(s.window.reduce((a, b) => a + b, 0) / s.window.length);\n\nnode.status({ fill: 'green', shape: 'dot', text: `${code} ${avg} cm (brut ${level})` });\nreturn [\n    { topic, qos: 1, payload: JSON.stringify({ ...base, levelCm: avg, rawLevelCm: level, sensorOk: true }) },\n    { code, levelCm: avg, ts: now }\n];",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 420,
+    "x": 400,
     "y": 100,
     "wires": [
       [
-        "fw_out_cloud",
+        "fw_fn_queue",
         "fw_debug"
+      ],
+      [
+        "fw_fn_safety"
       ]
     ]
-  },
-  {
-    "id": "fw_out_cloud",
-    "type": "mqtt out",
-    "z": "fw_tab",
-    "name": "Vers floodwatch/stations (pont Cloud)",
-    "topic": "",
-    "qos": "1",
-    "retain": "false",
-    "respTopic": "",
-    "contentType": "",
-    "userProps": "",
-    "correl": "",
-    "expiry": "",
-    "broker": "fw_local_broker",
-    "x": 720,
-    "y": 100,
-    "wires": []
   },
   {
     "id": "fw_debug",
     "type": "debug",
     "z": "fw_tab",
-    "name": "Télémétrie validée",
+    "name": "Télémétrie filtrée",
     "active": false,
     "tosidebar": true,
     "console": false,
@@ -108,15 +150,298 @@
     "targetType": "msg",
     "statusVal": "",
     "statusType": "auto",
-    "x": 690,
-    "y": 150,
+    "x": 660,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "fw_c2",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "2. Règle de sécurité locale (> 85 % -> CLOSE + RED, même sans Cloud)",
+    "info": "",
+    "x": 250,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "fw_fn_safety",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "Sécurité locale > 85 %",
+    "func": "// Règle de sécurité locale de la passerelle (fonctionne SANS Cloud) :\n// niveau filtré > SAFETY_PCT % (85 %) du niveau critique -> barrière CLOSE + feu RED envoyés\n// directement à la station sur le broker local. Une seule fois par épisode : le verrou est levé\n// quand le niveau repasse sous le seuil orange. La réouverture reste décidée par la station\n// (temporisation) ou par le Cloud.\nconst { code, levelCm } = msg;\nconst cfg = (flow.get('configs') || {})[code] || {};\nconst reg = (global.get('stations') || {})[code] || {};\nconst critical = Number(cfg.criticalCm || reg.criticalCm || 20);\nconst limit = Number(env.get('SAFETY_PCT'));\nconst orange = Number(cfg.orangePct || 60);\nconst pct = 100 * levelCm / critical;\nconst latch = flow.get('safetyLatch') || {};\n\nif (pct > limit && !latch[code]) {\n    latch[code] = Date.now();\n    flow.set('safetyLatch', latch);\n    const uuid = global.get('randomUUID');\n    const cmd = (actuator, value) => ({\n        topic: `floodwatch/stations/${code}/cmd`, qos: 1, retain: false,\n        payload: JSON.stringify({ id: uuid(), actuator, value, ts: Date.now(), origin: 'gateway' })\n    });\n    const info = { event: 'local_safety', station: code, levelCm, levelPct: Math.round(pct * 10) / 10, limitPct: limit };\n    node.warn(JSON.stringify(info));\n    node.status({ fill: 'red', shape: 'dot', text: `${code} FERMETURE ${info.levelPct} %` });\n    const event = { topic: `floodwatch/gateways/${env.get('GATEWAY_ID')}/events`, qos: 1,\n                    payload: JSON.stringify({ type: 'local_safety', station: code, levelPct: info.levelPct, ts: Date.now() }) };\n    return [[cmd('barrier', 'CLOSE'), cmd('light', 'RED')], event];\n}\nif (latch[code] && pct < orange) {\n    delete latch[code];\n    flow.set('safetyLatch', latch);\n    node.status({ fill: 'green', shape: 'ring', text: `${code} sous le seuil orange` });\n}\nreturn null;",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 420,
+    "y": 220,
+    "wires": [
+      [
+        "fw_out_local"
+      ],
+      [
+        "fw_fn_queue"
+      ]
+    ]
+  },
+  {
+    "id": "fw_c3",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "3. Relais local -> Cloud et file d'attente",
+    "info": "",
+    "x": 200,
+    "y": 300,
+    "wires": []
+  },
+  {
+    "id": "fw_in_up",
+    "type": "mqtt in",
+    "z": "fw_tab",
+    "name": "Messages des stations",
+    "topic": "floodwatch/stations/+/+",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "fw_local_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 150,
+    "y": 340,
+    "wires": [
+      [
+        "fw_switch_up"
+      ]
+    ]
+  },
+  {
+    "id": "fw_switch_up",
+    "type": "switch",
+    "z": "fw_tab",
+    "name": "type de message",
+    "property": "topic",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "regex",
+        "v": "/(heartbeat|state|status|ack|td)$",
+        "vt": "str",
+        "case": false
+      },
+      {
+        "t": "regex",
+        "v": "/telemetry$",
+        "vt": "str",
+        "case": false
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2,
+    "x": 360,
+    "y": 340,
+    "wires": [
+      [
+        "fw_fn_relay_up",
+        "fw_fn_seen"
+      ],
+      [
+        "fw_fn_validate",
+        "fw_fn_seen"
+      ]
+    ]
+  },
+  {
+    "id": "fw_fn_relay_up",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "Relais montant",
+    "func": "// Relais montant (broker local -> Cloud) : heartbeat, state, status (LWT), ack, td.\n// Le drapeau « retenu » est conservé (state, status et td sont retenus sur le Cloud).\nmsg.qos = 1;\nmsg.retain = msg.retain === true;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 560,
+    "y": 320,
+    "wires": [
+      [
+        "fw_fn_queue"
+      ]
+    ]
+  },
+  {
+    "id": "fw_fn_seen",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "Dernier contact",
+    "func": "// Dernier contact de chaque station (tout message montant, sauf le LWT « offline »).\nconst code = msg.topic.split('/')[2];\nif (msg.topic.endsWith('/status') && String(msg.payload).includes('offline')) return null;\nconst seen = flow.get('lastSeen') || {};\nseen[code] = Date.now();\nflow.set('lastSeen', seen);\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 560,
+    "y": 380,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "fw_fn_queue",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "File d'attente Cloud",
+    "func": "// File d'attente Cloud (store-and-forward).\n// - Entrée « status » (nœud Statut du client MQTT Cloud) : suit la connexion ; à la reconnexion,\n//   renvoie les messages en attente dans l'ordre.\n// - Entrée « message » : transmis si le Cloud est joignable, sinon mis en file (contexte « file » :\n//   la file survit au redémarrage de Node-RED). Messages retenus (state, status, td) : seul le\n//   dernier par topic est conservé. Au-delà de QUEUE_MAX, les plus anciens sont abandonnés.\nconst MAX = Number(env.get('QUEUE_MAX'));\nif (msg.status) {\n    const up = msg.status.fill === 'green';\n    const was = flow.get('cloudUp') === true;\n    flow.set('cloudUp', up);\n    if (up && !was) {\n        const queue = flow.get('cloudQueue', 'file') || [];\n        flow.set('cloudQueue', [], 'file');\n        if (queue.length) {\n            node.log(JSON.stringify({ event: 'queue_flush', count: queue.length }));\n            for (const m of queue) node.send({ topic: m.topic, payload: m.payload, qos: m.qos, retain: m.retain });\n        }\n    } else if (!up && was) {\n        node.warn(JSON.stringify({ event: 'cloud_down', detail: msg.status.text }));\n    }\n    node.status(up ? { fill: 'green', shape: 'dot', text: 'Cloud connecté' }\n                   : { fill: 'yellow', shape: 'ring', text: `Cloud coupé : ${(flow.get('cloudQueue', 'file') || []).length} en attente` });\n    return null;\n}\nif (flow.get('cloudUp') === true) {\n    msg.qos = msg.qos === undefined ? 1 : msg.qos;\n    msg.retain = !!msg.retain;\n    return msg;\n}\nlet queue = flow.get('cloudQueue', 'file') || [];\nconst item = { topic: msg.topic, payload: msg.payload, qos: msg.qos === undefined ? 1 : msg.qos, retain: !!msg.retain };\nif (item.retain) queue = queue.filter(m => m.topic !== item.topic);\nqueue.push(item);\nif (queue.length > MAX) {\n    const dropped = queue.length - MAX;\n    queue = queue.slice(dropped);\n    node.warn(JSON.stringify({ event: 'queue_overflow', dropped }));\n}\nflow.set('cloudQueue', queue, 'file');\nnode.status({ fill: 'yellow', shape: 'ring', text: `Cloud coupé : ${queue.length} en attente` });\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 800,
+    "y": 260,
+    "wires": [
+      [
+        "fw_out_cloud"
+      ]
+    ]
+  },
+  {
+    "id": "fw_out_cloud",
+    "type": "mqtt out",
+    "z": "fw_tab",
+    "name": "Vers le Cloud",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "fw_cloud_broker",
+    "x": 1010,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "fw_status_cloud",
+    "type": "status",
+    "z": "fw_tab",
+    "name": "Connexion Cloud",
+    "scope": [
+      "fw_out_cloud"
+    ],
+    "x": 800,
+    "y": 200,
+    "wires": [
+      [
+        "fw_fn_queue"
+      ]
+    ]
+  },
+  {
+    "id": "fw_c4",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "4. Relais Cloud -> local (commandes, configuration retenue)",
+    "info": "",
+    "x": 220,
+    "y": 440,
+    "wires": []
+  },
+  {
+    "id": "fw_in_cloud_cmd",
+    "type": "mqtt in",
+    "z": "fw_tab",
+    "name": "Commandes (Cloud)",
+    "topic": "floodwatch/stations/+/cmd",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "fw_cloud_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 150,
+    "y": 480,
+    "wires": [
+      [
+        "fw_fn_down"
+      ]
+    ]
+  },
+  {
+    "id": "fw_in_cloud_cfg",
+    "type": "mqtt in",
+    "z": "fw_tab",
+    "name": "Configurations (Cloud)",
+    "topic": "floodwatch/stations/+/config",
+    "qos": "1",
+    "datatype": "utf8",
+    "broker": "fw_cloud_broker",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 160,
+    "y": 530,
+    "wires": [
+      [
+        "fw_fn_down"
+      ]
+    ]
+  },
+  {
+    "id": "fw_fn_down",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "Relais descendant",
+    "func": "// Relais descendant (Cloud -> broker local) : commandes et configuration (retenue).\nmsg.qos = 1;\nmsg.retain = msg.topic.endsWith('/config') ? true : msg.retain === true;\nnode.log(JSON.stringify({ event: 'downlink', topic: msg.topic }));\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 400,
+    "y": 500,
+    "wires": [
+      [
+        "fw_out_local"
+      ]
+    ]
+  },
+  {
+    "id": "fw_out_local",
+    "type": "mqtt out",
+    "z": "fw_tab",
+    "name": "Vers les stations (local)",
+    "topic": "",
+    "qos": "",
+    "retain": "",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "fw_local_broker",
+    "x": 660,
+    "y": 500,
     "wires": []
   },
   {
     "id": "fw_in_cfg",
     "type": "mqtt in",
     "z": "fw_tab",
-    "name": "Configurations (retenues)",
+    "name": "Configurations (local, retenues)",
     "topic": "floodwatch/stations/+/config",
     "qos": "1",
     "datatype": "utf8",
@@ -125,8 +450,8 @@
     "rap": true,
     "rh": 0,
     "inputs": 0,
-    "x": 170,
-    "y": 220,
+    "x": 180,
+    "y": 580,
     "wires": [
       [
         "fw_fn_cfg"
@@ -138,83 +463,62 @@
     "type": "function",
     "z": "fw_tab",
     "name": "Mémoriser les seuils",
-    "func": "// Mémorise la configuration retenue (seuils) de chaque station pour la validation locale.\nconst code = msg.topic.split('/')[2];\ntry {\n    const configs = flow.get('configs') || {};\n    configs[code] = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;\n    flow.set('configs', configs);\n    node.status({ fill: 'blue', shape: 'ring', text: `config ${code}` });\n} catch (e) { node.warn('config illisible : ' + e.message); }\nreturn null;",
+    "func": "// Mémorise la configuration retenue (seuils) de chaque station : validation et règle locale.\nconst code = msg.topic.split('/')[2];\ntry {\n    const configs = flow.get('configs') || {};\n    configs[code] = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;\n    flow.set('configs', configs);\n    node.status({ fill: 'blue', shape: 'ring', text: `config ${code}` });\n} catch (e) { node.warn(JSON.stringify({ event: 'invalid_config', station: code, detail: e.message })); }\nreturn null;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 430,
-    "y": 220,
+    "x": 440,
+    "y": 580,
     "wires": [
       []
     ]
   },
   {
-    "id": "fw_in_up",
-    "type": "mqtt in",
+    "id": "fw_status_local",
+    "type": "status",
     "z": "fw_tab",
-    "name": "Messages de vie / états",
-    "topic": "floodwatch/stations/+/+",
-    "qos": "0",
-    "datatype": "utf8",
-    "broker": "fw_local_broker",
-    "nl": false,
-    "rap": true,
-    "rh": 0,
-    "inputs": 0,
-    "x": 170,
-    "y": 300,
-    "wires": [
-      [
-        "fw_switch_up"
-      ]
-    ]
-  },
-  {
-    "id": "fw_switch_up",
-    "type": "switch",
-    "z": "fw_tab",
-    "name": "montant ?",
-    "property": "topic",
-    "propertyType": "msg",
-    "rules": [
-      {
-        "t": "regex",
-        "v": "/(heartbeat|state|ack|telemetry)$",
-        "vt": "str",
-        "case": false
-      }
+    "name": "Connexion locale",
+    "scope": [
+      "fw_out_local"
     ],
-    "checkall": "true",
-    "repair": false,
-    "outputs": 1,
-    "x": 390,
-    "y": 300,
+    "x": 150,
+    "y": 630,
     "wires": [
       [
-        "fw_fn_seen"
+        "fw_fn_local_status"
       ]
     ]
   },
   {
-    "id": "fw_fn_seen",
+    "id": "fw_fn_local_status",
     "type": "function",
     "z": "fw_tab",
-    "name": "Dernier contact",
-    "func": "// Dernier contact de chaque station (tout message montant).\nconst parts = msg.topic.split('/');\nconst code = parts[0] === 'fw' ? parts[2] : parts[2];\nconst seen = flow.get('lastSeen') || {};\nseen[code] = Date.now();\nflow.set('lastSeen', seen);\nreturn null;",
+    "name": "État broker local",
+    "func": "// Suit la connexion au broker local (pour GET /health).\nflow.set('localUp', msg.status.fill === 'green');\nreturn null;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 580,
-    "y": 300,
+    "x": 400,
+    "y": 630,
     "wires": [
       []
     ]
+  },
+  {
+    "id": "fw_c5",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "5. Chien de garde (> 60 s) et vie de la passerelle",
+    "info": "",
+    "x": 210,
+    "y": 690,
+    "wires": []
   },
   {
     "id": "fw_inject_watch",
@@ -233,8 +537,8 @@
     "topic": "",
     "payload": "",
     "payloadType": "date",
-    "x": 160,
-    "y": 380,
+    "x": 150,
+    "y": 730,
     "wires": [
       [
         "fw_fn_mute"
@@ -245,8 +549,8 @@
     "id": "fw_fn_mute",
     "type": "function",
     "z": "fw_tab",
-    "name": "Stations muettes (> 45 s)",
-    "func": "// Détection locale des stations muettes (aucun message depuis 45 s = 3 messages de vie manqués).\nconst LIMIT = Number(env.get('MUTE_AFTER_SEC') || 45) * 1000;\nconst seen = flow.get('lastSeen') || {};\nconst muted = flow.get('muted') || {};\nconst gw = env.get('GATEWAY_ID') || 'gw-01';\nconst now = Date.now();\nconst out = [];\nfor (const [code, t] of Object.entries(seen)) {\n    const silent = now - t > LIMIT;\n    if (silent && !muted[code]) {\n        muted[code] = true;\n        out.push({ topic: `floodwatch/gateways/${gw}/events`, qos: 1,\n                   payload: JSON.stringify({ type: 'station_mute', station: code, silentSec: Math.round((now - t) / 1000), ts: now }) });\n    } else if (!silent && muted[code]) {\n        delete muted[code];\n        out.push({ topic: `floodwatch/gateways/${gw}/events`, qos: 1,\n                   payload: JSON.stringify({ type: 'station_back', station: code, ts: now }) });\n    }\n}\nflow.set('muted', muted);\nnode.status({ fill: Object.keys(muted).length ? 'red' : 'green', shape: 'dot',\n              text: `${Object.keys(seen).length} station(s), ${Object.keys(muted).length} muette(s)` });\nreturn [out];",
+    "name": "Stations muettes (> 60 s)",
+    "func": "// Chien de garde : station muette depuis plus de MUTE_AFTER_SEC (60 s) -> station_mute ;\n// retour de la station -> station_back. Événements envoyés au Cloud via la file d'attente.\nconst LIMIT = Number(env.get('MUTE_AFTER_SEC')) * 1000;\nconst seen = flow.get('lastSeen') || {};\nconst muted = flow.get('muted') || {};\nconst gw = env.get('GATEWAY_ID');\nconst now = Date.now();\nconst out = [];\nfor (const [code, t] of Object.entries(seen)) {\n    const silent = now - t > LIMIT;\n    if (silent && !muted[code]) {\n        muted[code] = true;\n        const ev = { type: 'station_mute', station: code, silentSec: Math.round((now - t) / 1000), ts: now };\n        node.warn(JSON.stringify({ event: 'station_mute', ...ev }));\n        out.push({ topic: `floodwatch/gateways/${gw}/events`, qos: 1, payload: JSON.stringify(ev) });\n    } else if (!silent && muted[code]) {\n        delete muted[code];\n        out.push({ topic: `floodwatch/gateways/${gw}/events`, qos: 1,\n                   payload: JSON.stringify({ type: 'station_back', station: code, ts: now }) });\n    }\n}\nflow.set('muted', muted);\nnode.status({ fill: Object.keys(muted).length ? 'red' : 'green', shape: 'dot',\n              text: `${Object.keys(seen).length} station(s), ${Object.keys(muted).length} muette(s)` });\nreturn [out];",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -254,10 +558,10 @@
     "finalize": "",
     "libs": [],
     "x": 400,
-    "y": 380,
+    "y": 730,
     "wires": [
       [
-        "fw_out_events",
+        "fw_fn_queue",
         "fw_debug_events"
       ]
     ]
@@ -280,7 +584,7 @@
     "payload": "",
     "payloadType": "date",
     "x": 160,
-    "y": 440,
+    "y": 790,
     "wires": [
       [
         "fw_fn_alive"
@@ -292,38 +596,20 @@
     "type": "function",
     "z": "fw_tab",
     "name": "Vie de la passerelle",
-    "func": "// Message de vie de la passerelle (toutes les 5 min).\nconst gw = env.get('GATEWAY_ID') || 'gw-01';\nconst start = context.get('start') || Date.now();\ncontext.set('start', start);\nreturn { topic: `floodwatch/gateways/${gw}/events`, qos: 1,\n         payload: JSON.stringify({ type: 'gateway_alive', uptimeSec: Math.round((Date.now() - start) / 1000), ts: Date.now() }) };",
+    "func": "// Message de vie de la passerelle (toutes les 5 min).\nconst gw = env.get('GATEWAY_ID');\nconst start = context.get('start') || Date.now();\ncontext.set('start', start);\nreturn { topic: `floodwatch/gateways/${gw}/events`, qos: 1,\n         payload: JSON.stringify({ type: 'gateway_alive', uptimeSec: Math.round((Date.now() - start) / 1000),\n                                   queued: (flow.get('cloudQueue', 'file') || []).length, ts: Date.now() }) };",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "x": 390,
-    "y": 440,
+    "x": 400,
+    "y": 790,
     "wires": [
       [
-        "fw_out_events"
+        "fw_fn_queue"
       ]
     ]
-  },
-  {
-    "id": "fw_out_events",
-    "type": "mqtt out",
-    "z": "fw_tab",
-    "name": "floodwatch/gateways/<gw>/events",
-    "topic": "",
-    "qos": "1",
-    "retain": "false",
-    "respTopic": "",
-    "contentType": "",
-    "userProps": "",
-    "correl": "",
-    "expiry": "",
-    "broker": "fw_local_broker",
-    "x": 700,
-    "y": 400,
-    "wires": []
   },
   {
     "id": "fw_debug_events",
@@ -338,8 +624,66 @@
     "targetType": "msg",
     "statusVal": "",
     "statusType": "auto",
-    "x": 690,
-    "y": 450,
+    "x": 660,
+    "y": 760,
+    "wires": []
+  },
+  {
+    "id": "fw_c6",
+    "type": "comment",
+    "z": "fw_tab",
+    "name": "6. Contrôle de santé : GET /health",
+    "info": "",
+    "x": 170,
+    "y": 850,
+    "wires": []
+  },
+  {
+    "id": "fw_http_health",
+    "type": "http in",
+    "z": "fw_tab",
+    "name": "GET /health",
+    "url": "/health",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 140,
+    "y": 890,
+    "wires": [
+      [
+        "fw_fn_health"
+      ]
+    ]
+  },
+  {
+    "id": "fw_fn_health",
+    "type": "function",
+    "z": "fw_tab",
+    "name": "État de la passerelle",
+    "func": "// GET /health : 200 si le broker local est joignable (UP, ou DEGRADED si le Cloud est coupé :\n// la passerelle continue alors à protéger les stations), 503 sinon.\nconst localUp = flow.get('localUp') === true;\nconst cloudUp = flow.get('cloudUp') === true;\nconst seen = flow.get('lastSeen') || {};\nconst now = Date.now();\nmsg.statusCode = localUp ? 200 : 503;\nmsg.headers = { 'Content-Type': 'application/json; charset=utf-8' };\nmsg.payload = {\n    status: !localUp ? 'DOWN' : (cloudUp ? 'UP' : 'DEGRADED'),\n    gateway: env.get('GATEWAY_ID'), localBroker: localUp, cloudBroker: cloudUp,\n    queued: (flow.get('cloudQueue', 'file') || []).length,\n    stations: Object.fromEntries(Object.entries(seen).map(([c, t]) => [c, { lastSeenAgoSec: Math.round((now - t) / 1000),\n                                                                             muted: !!(flow.get('muted') || {})[c] }]))\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 890,
+    "wires": [
+      [
+        "fw_http_resp"
+      ]
+    ]
+  },
+  {
+    "id": "fw_http_resp",
+    "type": "http response",
+    "z": "fw_tab",
+    "name": "",
+    "statusCode": "",
+    "headers": {},
+    "x": 590,
+    "y": 890,
     "wires": []
   }
 ]

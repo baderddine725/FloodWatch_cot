@@ -1,9 +1,34 @@
-# ACL du broker local de la passerelle : chaque station n'accède qu'à ses propres topics.
-# Le nom d'utilisateur MQTT d'une station est son code (ex. underpass-01) :
-#   sudo mosquitto_passwd /etc/mosquitto/floodwatch.passwd underpass-01
-pattern write fw/raw/%u/#
-pattern readwrite floodwatch/stations/%u/#
+# =============================================================================
+#  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Couche    : passerelle – back-end & IoT
+#  Fichier   : gateway/mosquitto/floodwatch.acl
+#  Équipe    : FloodWatch – Auteur : Ksontini Amine
+#  Créé le   : 2026-11-02          Modifié le : 2026-11-03          Version : 1.1
+#  Rôle      : ACL du broker LOCAL de la passerelle (Raspberry Pi et conteneur mosquitto-local).
+#              Tout ce qui n'est pas autorisé ici est refusé.
+# =============================================================================
 
-# Compte de diagnostic (lecture seule)
+# Passerelle Node-RED : lit toutes les stations ; seul compte autorisé à leur envoyer des
+# commandes et la configuration (relayées depuis le Cloud, ou règle de sécurité locale).
+user gateway
+topic read fw/raw/#
+topic read floodwatch/stations/#
+topic write floodwatch/stations/+/cmd
+topic write floodwatch/stations/+/config
+
+# Compte de diagnostic (MQTT Explorer pendant la démo, contrôle de santé) : lecture seule.
 user diag
 topic read #
+topic read $SYS/#
+
+# Stations : le nom d'utilisateur MQTT est le code de la station (%u), ex. underpass-01.
+# Une station publie seulement SES messages et ne lit que SES commandes et SA configuration.
+pattern write fw/raw/%u/telemetry
+pattern write floodwatch/stations/%u/telemetry
+pattern write floodwatch/stations/%u/heartbeat
+pattern write floodwatch/stations/%u/state
+pattern write floodwatch/stations/%u/status
+pattern write floodwatch/stations/%u/ack
+pattern write floodwatch/stations/%u/td
+pattern read floodwatch/stations/%u/cmd
+pattern read floodwatch/stations/%u/config
