@@ -1,9 +1,12 @@
 /*
  * ============================================================================
- *  Module   : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
- *  Fichier  : firmware/src/main.cpp – station FloodWatch (ESP32)
- *  Équipe   : FloodWatch – Auteur : Ksontini Amine
- *  Version  : 1.0 – 2026-11-02
+ *  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+ *  Couche    : firmware – back-end & IoT
+ *  Fichier   : firmware/src/main.cpp – station FloodWatch (ESP32)
+ *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
+ *  Auteur    : Ksontini Amine
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-03
+ *  Version   : 1.1
  * ============================================================================
  *  Fonctions :
  *   - mesure du niveau d'eau (HC-SR04, médiane de 5 échos) et de la pluie (ADC) ;
@@ -13,7 +16,9 @@
  *   - RÈGLE DE SÉCURITÉ LOCALE : au-delà du seuil rouge, la station ferme elle-même la
  *     barrière, passe le feu au rouge et déclenche la sirène, même sans Wi-Fi ni Cloud.
  *     Réouverture seulement après retour sous le seuil orange pendant la temporisation.
- *   - verrou de sécurité : une commande d'ouverture est refusée au-dessus du seuil rouge.
+ *   - verrou de sécurité : une commande d'ouverture est refusée au-dessus du seuil rouge ;
+ *   - Thing Description W3C WoT 1.1 publiée (retenue) sur floodwatch/stations/<code>/td
+ *     à chaque connexion (gabarit généré et validé par simulator/tools/export_td.py).
  * ============================================================================
  */
 #include <Arduino.h>
@@ -24,8 +29,9 @@
 #include <ESP32Servo.h>
 #include <Preferences.h>
 #include "station_config.h"
+#include "td_template.h"
 
-static const char *FW_VERSION = "1.0.0";
+static const char *FW_VERSION = "1.1.0";
 static const uint32_t HEARTBEAT_MS = 15000;
 
 // ----------------------------------------------------------------------------- configuration (NVS)
@@ -59,7 +65,7 @@ WiFiClientSecure net;
 WiFiClient net;
 #endif
 PubSubClient mqtt(net);
-String tTelemetry, tHeartbeat, tState, tStatus, tAck, tCmd, tConfig;
+String tTelemetry, tHeartbeat, tState, tStatus, tAck, tCmd, tConfig, tTd;
 
 // ----------------------------------------------------------------------------- utilitaires
 const char *lightName(Light l) {
@@ -203,6 +209,38 @@ void localSafetyRule() {
   }
 }
 
+// ----------------------------------------------------------------------------- Thing Description
+/** Échappe un texte pour l'insérer dans une chaîne JSON (guillemets et barres obliques inverses). */
+String jsonEscape(const char *s) {
+  String out;
+  for (; *s; s++) {
+    if (*s == '"' || *s == '\\') out += '\\';
+    out += *s;
+  }
+  return out;
+}
+
+/**
+ * Publie la Thing Description W3C WoT de la station, retenue : gabarit de son type (td_template.h)
+ * dont les marqueurs {{CODE}}, {{TITLE}}... sont remplacés par l'identité de station_config.h.
+ * Envoi en flux (beginPublish) : la TD (~9 Ko) dépasse le tampon MQTT de 1 Ko.
+ */
+void publishThingDescription() {
+  String td(tdTemplateFor(STATION_TYPE));
+  td.replace("{{CODE}}", STATION_CODE);
+  td.replace("{{TITLE}}", jsonEscape(STATION_TITLE));
+  td.replace("{{ZONE}}", jsonEscape(STATION_ZONE));
+  td.replace("{{BROKER}}", TD_BROKER_URL);
+  td.replace("{{LAT}}", STATION_LAT);
+  td.replace("{{LON}}", STATION_LON);
+  td.replace("{{FW}}", FW_VERSION);
+  if (mqtt.beginPublish(tTd.c_str(), td.length(), true)) {
+    mqtt.write((const uint8_t *)td.c_str(), td.length());
+    mqtt.endPublish();
+    Serial.printf("[WOT] Thing Description publiée (%u octets)\n", td.length());
+  }
+}
+
 // ----------------------------------------------------------------------------- MQTT
 void sendAck(const char *id, bool ok, const char *detail) {
   JsonDocument doc;
@@ -285,6 +323,7 @@ void ensureMqtt() {
     mqtt.publish(tStatus.c_str(), "online", true);
     mqtt.subscribe(tCmd.c_str(), 1);
     mqtt.subscribe(tConfig.c_str(), 1);
+    publishThingDescription();
     publishState();
     Serial.println("[MQTT] connecté");
   } else {
@@ -342,6 +381,7 @@ void setup() {
   tAck = base + "ack";
   tCmd = base + "cmd";
   tConfig = base + "config";
+  tTd = base + "td";
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
