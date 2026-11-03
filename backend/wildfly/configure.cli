@@ -1,0 +1,28 @@
+# =============================================================================
+#  FloodWatch – configuration WildFly (exécutée à la construction de l'image)
+#  Source de données PostgreSQL paramétrée par variables d'environnement :
+#  DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+# =============================================================================
+embed-server --std-out=echo --server-config=standalone.xml
+
+# Pilote JDBC PostgreSQL déployé comme bibliothèque
+deploy /tmp/postgresql.jar --name=postgresql.jar
+
+data-source add --name=FloodWatchDS \
+  --jndi-name=java:jboss/datasources/FloodWatchDS \
+  --driver-name=postgresql.jar \
+  --connection-url="jdbc:postgresql://${env.DB_HOST:postgres}:${env.DB_PORT:5432}/${env.DB_NAME:floodwatch}" \
+  --user-name="${env.DB_USER:floodwatch}" \
+  --password="${env.DB_PASSWORD:floodwatch}" \
+  --min-pool-size=2 --max-pool-size=30 \
+  --validate-on-match=true --background-validation=false \
+  --valid-connection-checker-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLValidConnectionChecker \
+  --exception-sorter-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLExceptionSorter
+
+# MicroProfile Config (normalement présent dans standalone.xml ; ajouté sinon)
+if (outcome != success) of /subsystem=microprofile-config-smallrye:read-resource
+  /extension=org.wildfly.extension.microprofile.config-smallrye:add
+  /subsystem=microprofile-config-smallrye:add
+end-if
+
+stop-embedded-server

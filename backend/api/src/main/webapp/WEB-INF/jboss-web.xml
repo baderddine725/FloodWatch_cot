@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Contexte de déploiement WildFly : http://<serveur>:8080/floodwatch -->
+<jboss-web>
+    <context-root>/floodwatch</context-root>
+</jboss-web>

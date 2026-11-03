@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Unité de persistance FloodWatch (PostgreSQL via la source de données WildFly FloodWatchDS) -->
+<persistence xmlns="https://jakarta.ee/xml/ns/persistence"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence https://jakarta.ee/xml/ns/persistence/persistence_3_2.xsd"
+             version="3.2">
+    <persistence-unit name="floodwatch" transaction-type="JTA">
+        <jta-data-source>java:jboss/datasources/FloodWatchDS</jta-data-source>
+        <class>tn.supcom.cot.iam.entities.Identity</class>
+        <class>tn.supcom.cot.api.entities.Station</class>
+        <class>tn.supcom.cot.api.entities.StationThresholds</class>
+        <class>tn.supcom.cot.api.entities.Measurement</class>
+        <class>tn.supcom.cot.api.entities.Alert</class>
+        <class>tn.supcom.cot.api.entities.ActuatorCommand</class>
+        <class>tn.supcom.cot.api.entities.PushSubscription</class>
+        <class>tn.supcom.cot.api.entities.AppSetting</class>
+        <exclude-unlisted-classes>true</exclude-unlisted-classes>
+        <properties>
+            <!-- Schéma créé / mis à jour automatiquement (prototype) -->
+            <property name="hibernate.hbm2ddl.auto" value="update"/>
+            <property name="hibernate.jdbc.time_zone" value="UTC"/>
+            <property name="hibernate.jdbc.batch_size" value="20"/>
+        </properties>
+    </persistence-unit>
+</persistence>

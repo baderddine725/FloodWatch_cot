@@ -1,0 +1,300 @@
+openapi: 3.0.3
+info:
+  title: FloodWatch API
+  version: "1.0"
+  description: |
+    API REST de la plateforme FloodWatch (Jakarta EE 11 / WildFly 40) – Sup'Com, module Cloud of Things 2026-2027.
+    Authentification : `POST /auth/login` renvoie un jeton JWT à transmettre dans `Authorization: Bearer <jeton>`.
+    Rôles : OPERATOR (supervision, commandes), ADMIN (stations, seuils, comptes). Les routes publiques servent la PWA Citoyen.
+    Temps réel : WebSocket `/ws/live` (option `?token=<jwt>` pour recevoir alertes et commandes).
+  contact: { name: Équipe FloodWatch, url: "https://github.com/baderddine725/FloodWatch_cot" }
+servers:
+  - url: /api
+    description: Derrière Nginx (production)
+  - url: http://localhost:8080/floodwatch/api
+    description: WildFly en local
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Error:
+      type: object
+      properties: { status: { type: integer }, error: { type: string } }
+    Thresholds:
+      type: object
+      properties:
+        criticalCm: { type: number, example: 20 }
+        yellowPct: { type: number, example: 30 }
+        orangePct: { type: number, example: 60 }
+        redPct: { type: number, example: 85 }
+        rainThreshold: { type: number, example: 0.2 }
+        rapidRiseCmPerMin: { type: number, example: 3 }
+        forecastRedMinutes: { type: number, example: 10 }
+        reopenDelaySec: { type: integer, example: 60 }
+        sensorHeightCm: { type: number, example: 30 }
+        periodNormalSec: { type: integer, example: 30 }
+        periodWatchSec: { type: integer, example: 5 }
+    Station:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: underpass-01 }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string, enum: [UNDERPASS, WADI, LOW_ROAD, FORD, OTHER] }
+        latitude: { type: number }
+        longitude: { type: number }
+        address: { type: string }
+        thresholds: { $ref: '#/components/schemas/Thresholds' }
+        alertLevel: { type: string, enum: [GREEN, YELLOW, ORANGE, RED] }
+        alertReasons: { type: string }
+        levelCm: { type: number }
+        levelPct: { type: number }
+        rain: { type: number, description: intensité normalisée 0..1 }
+        slopeCmPerMin: { type: number }
+        minutesToOverflow: { type: number, nullable: true }
+        riskIndex: { type: integer }
+        online: { type: boolean }
+        sensorFault: { type: boolean }
+        lastSeenAt: { type: string, format: date-time }
+        lastMeasurementAt: { type: string, format: date-time }
+        barrier: { type: string, enum: [OPEN, CLOSED, UNKNOWN] }
+        light: { type: string, enum: [GREEN, ORANGE, RED, OFF, UNKNOWN] }
+        siren: { type: boolean }
+        sampling: { type: string, enum: [NORMAL, WATCH] }
+        controlMode: { type: string, enum: [AUTO, MANUAL] }
+        localSafety: { type: boolean }
+        firmware: { type: string }
+        rssi: { type: integer }
+        roadOpen: { type: boolean }
+        etag: { type: string }
+    StationRequest:
+      type: object
+      properties:
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' }
+        name: { type: string }
+        description: { type: string }
+        type: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        address: { type: string }
+        thresholds: { $ref: '#/components/schemas/Thresholds' }
+    Measurement:
+      type: object
+      properties:
+        ts: { type: string, format: date-time }
+        levelCm: { type: number }
+        levelPct: { type: number }
+        rain: { type: number }
+        alertLevel: { type: string }
+    Alert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        stationId: { type: string, format: uuid }
+        stationCode: { type: string }
+        stationName: { type: string }
+        type: { type: string, enum: [LEVEL, OFFLINE, SENSOR_FAULT, LOCAL_SAFETY] }
+        level: { type: string, enum: [GREEN, YELLOW, ORANGE, RED] }
+        message: { type: string }
+        raisedAt: { type: string, format: date-time }
+        active: { type: boolean }
+        resolvedAt: { type: string, format: date-time }
+        acknowledgedAt: { type: string, format: date-time }
+        acknowledgedBy: { type: string }
+        barrierClosedAt: { type: string, format: date-time }
+        barrierReopenedAt: { type: string, format: date-time }
+    Command:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        stationCode: { type: string }
+        actuator: { type: string, enum: [barrier, light, siren, sampling] }
+        value: { type: string }
+        origin: { type: string, enum: [AUTO, MANUAL] }
+        issuedBy: { type: string }
+        issuedAt: { type: string, format: date-time }
+        status: { type: string, enum: [PENDING, ACKED, FAILED] }
+        ackedAt: { type: string, format: date-time }
+        detail: { type: string }
+    CommandRequest:
+      type: object
+      required: [actuator, value]
+      properties:
+        actuator: { type: string, enum: [barrier, light, siren, sampling] }
+        value: { type: string, description: "barrier: OPEN|CLOSE ; light: GREEN|ORANGE|RED|OFF ; siren: ON|OFF ; sampling: NORMAL|WATCH" }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        fullName: { type: string }
+        roles: { type: array, items: { type: string, enum: [CITIZEN, OPERATOR, ADMIN] } }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+  parameters:
+    StationId:
+      name: id
+      in: path
+      required: true
+      description: UUID ou code de la station
+      schema: { type: string, example: underpass-01 }
+  responses:
+    Unauthorized: { description: Jeton absent ou invalide, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: Rôle insuffisant, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Ressource introuvable, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+paths:
+  /health:
+    get:
+      tags: [Supervision]
+      summary: État du service (base de données, broker MQTT)
+      responses: { '200': { description: OK }, '503': { description: Base indisponible } }
+  /auth/login:
+    post:
+      tags: [Authentification]
+      summary: Obtenir un jeton JWT
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string } } } } }
+      responses:
+        '200': { description: Jeton, content: { application/json: { schema: { type: object, properties: { token: { type: string }, tokenType: { type: string }, expiresIn: { type: integer }, user: { $ref: '#/components/schemas/User' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/me:
+    get:
+      tags: [Authentification]
+      security: [{ bearer: [] }]
+      summary: Profil de l'utilisateur connecté
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /stations:
+    get:
+      tags: [Stations]
+      summary: Liste des stations et de leur état temps réel (public)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Station' } } } } } }
+    post:
+      tags: [Stations]
+      security: [{ bearer: [] }]
+      summary: Créer une station (ADMIN) ; publie sa configuration retenue
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StationRequest' } } } }
+      responses: { '201': { description: Créée }, '400': { description: Requête invalide }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /stations/{id}:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    get:
+      tags: [Stations]
+      summary: Détail d'une station (ETag, If-None-Match)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Station' } } } }, '304': { description: Non modifiée }, '404': { $ref: '#/components/responses/NotFound' } }
+    put:
+      tags: [Stations]
+      security: [{ bearer: [] }]
+      summary: Modifier métadonnées et seuils (ADMIN, If-Match optionnel)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StationRequest' } } } }
+      responses: { '200': { description: OK }, '412': { description: ETag obsolète }, '403': { $ref: '#/components/responses/Forbidden' } }
+    delete:
+      tags: [Stations]
+      security: [{ bearer: [] }]
+      summary: Supprimer une station et son historique (ADMIN)
+      responses: { '204': { description: Supprimée }, '403': { $ref: '#/components/responses/Forbidden' } }
+  /stations/{id}/measurements:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    get:
+      tags: [Stations]
+      summary: Historique des mesures
+      parameters:
+        - { name: minutes, in: query, schema: { type: integer, default: 60 } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer, default: 2000, maximum: 10000 } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Measurement' } } } } } }
+  /stations/{id}/prediction:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    get:
+      tags: [Stations]
+      summary: Temps estimé avant débordement, vitesse de montée, indice de risque
+      responses: { '200': { description: OK } }
+  /stations/{id}/td:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    get:
+      tags: [Stations]
+      summary: Thing Description W3C WoT 1.1
+      responses: { '200': { description: OK, content: { application/td+json: { schema: { type: object } } } } }
+  /stations/{id}/commands:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    get:
+      tags: [Commandes]
+      security: [{ bearer: [] }]
+      summary: Dernières commandes (OPERATOR)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Command' } } } } } }
+    post:
+      tags: [Commandes]
+      security: [{ bearer: [] }]
+      summary: Commande manuelle d'un actionneur (OPERATOR) – la station passe en mode MANUAL
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CommandRequest' } } } }
+      responses: { '202': { description: Commande publiée, content: { application/json: { schema: { $ref: '#/components/schemas/Command' } } } }, '400': { description: Actionneur ou valeur invalide } }
+  /stations/{id}/mode:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    put:
+      tags: [Commandes]
+      security: [{ bearer: [] }]
+      summary: Mode de pilotage AUTO / MANUAL (OPERATOR)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { mode: { type: string, enum: [AUTO, MANUAL] } } } } } }
+      responses: { '200': { description: OK } }
+  /stations/{id}/config/publish:
+    parameters: [{ $ref: '#/components/parameters/StationId' }]
+    post:
+      tags: [Stations]
+      security: [{ bearer: [] }]
+      summary: Republier la configuration retenue vers la station (ADMIN)
+      responses: { '200': { description: OK } }
+  /alerts:
+    get:
+      tags: [Alertes]
+      security: [{ bearer: [] }]
+      summary: Alertes (OPERATOR)
+      parameters:
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: station, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100 } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Alert' } } } } } }
+  /alerts/{id}/ack:
+    post:
+      tags: [Alertes]
+      security: [{ bearer: [] }]
+      summary: Acquitter une alerte (OPERATOR)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Alert' } } } } }
+  /kpi:
+    get:
+      tags: [KPI]
+      security: [{ bearer: [] }]
+      summary: Indicateurs de performance (OPERATOR)
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 7 } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses: { '200': { description: OK } }
+  /users:
+    get: { tags: [Comptes], security: [{ bearer: [] }], summary: Liste des comptes (ADMIN), responses: { '200': { description: OK } } }
+    post:
+      tags: [Comptes]
+      security: [{ bearer: [] }]
+      summary: Créer un compte (ADMIN)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string, minLength: 8 }, fullName: { type: string }, roles: { type: array, items: { type: string } } } } } } }
+      responses: { '201': { description: Créé }, '409': { description: Identifiant déjà utilisé } }
+  /users/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    put: { tags: [Comptes], security: [{ bearer: [] }], summary: Modifier un compte (ADMIN), responses: { '200': { description: OK } } }
+    delete: { tags: [Comptes], security: [{ bearer: [] }], summary: Supprimer un compte (ADMIN), responses: { '204': { description: Supprimé } } }
+  /push/public-key:
+    get: { tags: [Notifications], summary: Clé publique VAPID, responses: { '200': { description: OK } } }
+  /push/subscriptions:
+    post:
+      tags: [Notifications]
+      summary: Abonnement Web Push (citoyen géolocalisé, ou opérateur si jeton fourni)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { subscription: { type: object }, latitude: { type: number }, longitude: { type: number }, radiusKm: { type: number } } } } } }
+      responses: { '201': { description: Abonné } }
+    delete:
+      tags: [Notifications]
+      summary: Désabonnement
+      parameters: [{ name: endpoint, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK } }
+  /push/test:
+    post: { tags: [Notifications], security: [{ bearer: [] }], summary: Notification de test vers tous les abonnés (OPERATOR), responses: { '200': { description: OK } } }
