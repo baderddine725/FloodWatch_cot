@@ -1,0 +1,24 @@
+{
+  "name": "FloodWatch Citoyen – état des routes inondables",
+  "short_name": "FloodWatch",
+  "description": "Carte en temps réel des passages inondables praticables ou fermés du Grand Tunis et alertes géolocalisées.",
+  "id": "./",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./#map",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#0B4F8A",
+  "categories": ["navigation", "weather", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Alertes près de moi", "short_name": "Alertes", "url": "./#alerts", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mes favoris", "short_name": "Favoris", "url": "./#favorites", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
