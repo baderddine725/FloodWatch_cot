@@ -1,0 +1,4 @@
+# FloodWatch – simulateur (Ksontini Amine, v1.0, 2026-11-03)
+.venv/
+.pytest_cache/
+__pycache__/

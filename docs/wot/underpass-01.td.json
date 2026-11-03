@@ -1,0 +1,526 @@
+{
+  "@context": [
+    "https://www.w3.org/2022/wot/td/v1.1",
+    {
+      "mqv": "http://www.example.org/mqtt-binding#",
+      "fw": "urn:floodwatch:vocab#"
+    }
+  ],
+  "@type": [
+    "Thing",
+    "Sensor",
+    "Actuator",
+    "fw:FloodWatchStation",
+    "fw:UnderpassStation"
+  ],
+  "id": "urn:floodwatch:station:underpass-01",
+  "title": "Passage souterrain Ariana",
+  "description": "Station de passage souterrain (trémie) : mesure du niveau d'eau (HC-SR04) et de la pluie ; barrière, feu tricolore et sirène. Ferme seule la barrière au seuil rouge, même sans Cloud.",
+  "version": {
+    "instance": "1.1.0",
+    "model": "floodwatch-station/1"
+  },
+  "securityDefinitions": {
+    "basic_sc": {
+      "scheme": "basic",
+      "description": "compte MQTT (utilisateur / mot de passe), droits fixés par les ACL Mosquitto"
+    }
+  },
+  "security": [
+    "basic_sc"
+  ],
+  "properties": {
+    "waterLevel": {
+      "title": "Niveau d'eau",
+      "description": "Hauteur d'eau (HC-SR04), filtrée par la passerelle (champ levelCm du message telemetry)",
+      "type": "number",
+      "unit": "cm",
+      "minimum": 0,
+      "readOnly": true,
+      "observable": true,
+      "fw:field": "levelCm",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/telemetry",
+          "contentType": "application/json",
+          "op": [
+            "observeproperty",
+            "unobserveproperty"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/telemetry",
+          "mqv:qos": 1,
+          "mqv:retain": false
+        }
+      ]
+    },
+    "rain": {
+      "title": "Pluie",
+      "description": "Intensité de pluie normalisée, 0 = sec, 1 = saturé (champ rain)",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "readOnly": true,
+      "observable": true,
+      "fw:field": "rain",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/telemetry",
+          "contentType": "application/json",
+          "op": [
+            "observeproperty",
+            "unobserveproperty"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/telemetry",
+          "mqv:qos": 1,
+          "mqv:retain": false
+        }
+      ]
+    },
+    "barrier": {
+      "title": "Barrière",
+      "description": "État de la barrière (champ barrier du message state, retenu)",
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "CLOSED"
+      ],
+      "readOnly": true,
+      "observable": true,
+      "fw:field": "barrier",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/state",
+          "contentType": "application/json",
+          "op": [
+            "observeproperty",
+            "unobserveproperty"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/state",
+          "mqv:qos": 1,
+          "mqv:retain": true
+        }
+      ]
+    },
+    "light": {
+      "title": "Feu",
+      "description": "Couleur du feu (champ light du message state, retenu)",
+      "type": "string",
+      "enum": [
+        "GREEN",
+        "ORANGE",
+        "RED",
+        "OFF"
+      ],
+      "readOnly": true,
+      "observable": true,
+      "fw:field": "light",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/state",
+          "contentType": "application/json",
+          "op": [
+            "observeproperty",
+            "unobserveproperty"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/state",
+          "mqv:qos": 1,
+          "mqv:retain": true
+        }
+      ]
+    }
+  },
+  "actions": {
+    "closeBarrier": {
+      "title": "Fermer la barrière",
+      "description": "Baisse la barrière et interdit la route",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID de la commande, repris dans l'acquittement"
+          },
+          "actuator": {
+            "type": "string",
+            "const": "barrier"
+          },
+          "value": {
+            "type": "string",
+            "const": "CLOSE"
+          },
+          "ts": {
+            "type": "integer",
+            "description": "horodatage d'émission (ms depuis 1970)"
+          }
+        },
+        "required": [
+          "id",
+          "actuator",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "description": "Acquittement publié par la station sur floodwatch/stations/{code}/ack",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "identifiant de la commande"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "description": "raison du refus (ex. verrouillage sécurité)"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "safe": false,
+      "idempotent": true,
+      "synchronous": false,
+      "fw:ackTopic": "floodwatch/stations/underpass-01/ack",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/cmd",
+          "contentType": "application/json",
+          "op": [
+            "invokeaction"
+          ],
+          "mqv:controlPacket": "publish",
+          "mqv:topic": "floodwatch/stations/underpass-01/cmd",
+          "mqv:qos": 1
+        }
+      ]
+    },
+    "openBarrier": {
+      "title": "Ouvrir la barrière",
+      "description": "Lève la barrière. REFUSÉ par la station (ack ok=false) tant que le niveau dépasse le seuil rouge (verrou de sécurité)",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID de la commande, repris dans l'acquittement"
+          },
+          "actuator": {
+            "type": "string",
+            "const": "barrier"
+          },
+          "value": {
+            "type": "string",
+            "const": "OPEN"
+          },
+          "ts": {
+            "type": "integer",
+            "description": "horodatage d'émission (ms depuis 1970)"
+          }
+        },
+        "required": [
+          "id",
+          "actuator",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "description": "Acquittement publié par la station sur floodwatch/stations/{code}/ack",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "identifiant de la commande"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "description": "raison du refus (ex. verrouillage sécurité)"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "safe": false,
+      "idempotent": true,
+      "synchronous": false,
+      "fw:ackTopic": "floodwatch/stations/underpass-01/ack",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/cmd",
+          "contentType": "application/json",
+          "op": [
+            "invokeaction"
+          ],
+          "mqv:controlPacket": "publish",
+          "mqv:topic": "floodwatch/stations/underpass-01/cmd",
+          "mqv:qos": 1
+        }
+      ]
+    },
+    "setLight": {
+      "title": "Commander le feu",
+      "description": "Change la couleur du feu tricolore",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID de la commande, repris dans l'acquittement"
+          },
+          "actuator": {
+            "type": "string",
+            "const": "light"
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "ORANGE",
+              "RED",
+              "OFF"
+            ]
+          },
+          "ts": {
+            "type": "integer",
+            "description": "horodatage d'émission (ms depuis 1970)"
+          }
+        },
+        "required": [
+          "id",
+          "actuator",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "description": "Acquittement publié par la station sur floodwatch/stations/{code}/ack",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "identifiant de la commande"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "description": "raison du refus (ex. verrouillage sécurité)"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "safe": false,
+      "idempotent": true,
+      "synchronous": false,
+      "fw:ackTopic": "floodwatch/stations/underpass-01/ack",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/cmd",
+          "contentType": "application/json",
+          "op": [
+            "invokeaction"
+          ],
+          "mqv:controlPacket": "publish",
+          "mqv:topic": "floodwatch/stations/underpass-01/cmd",
+          "mqv:qos": 1
+        }
+      ]
+    },
+    "siren": {
+      "title": "Commander la sirène",
+      "description": "Déclenche (ON) ou arrête (OFF) la sirène",
+      "input": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID de la commande, repris dans l'acquittement"
+          },
+          "actuator": {
+            "type": "string",
+            "const": "siren"
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "ON",
+              "OFF"
+            ]
+          },
+          "ts": {
+            "type": "integer",
+            "description": "horodatage d'émission (ms depuis 1970)"
+          }
+        },
+        "required": [
+          "id",
+          "actuator",
+          "value"
+        ]
+      },
+      "output": {
+        "type": "object",
+        "description": "Acquittement publié par la station sur floodwatch/stations/{code}/ack",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "identifiant de la commande"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string",
+            "description": "raison du refus (ex. verrouillage sécurité)"
+          }
+        },
+        "required": [
+          "id",
+          "ok"
+        ]
+      },
+      "safe": false,
+      "idempotent": true,
+      "synchronous": false,
+      "fw:ackTopic": "floodwatch/stations/underpass-01/ack",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/cmd",
+          "contentType": "application/json",
+          "op": [
+            "invokeaction"
+          ],
+          "mqv:controlPacket": "publish",
+          "mqv:topic": "floodwatch/stations/underpass-01/cmd",
+          "mqv:qos": 1
+        }
+      ]
+    }
+  },
+  "events": {
+    "floodAlert": {
+      "title": "Alerte crue (sécurité locale)",
+      "description": "La station a fermé seule la barrière (niveau au-dessus du seuil rouge) : message state retenu avec localSafety = true",
+      "data": {
+        "type": "object",
+        "properties": {
+          "barrier": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "light": {
+            "type": "string",
+            "enum": [
+              "GREEN",
+              "ORANGE",
+              "RED",
+              "OFF"
+            ]
+          },
+          "siren": {
+            "type": "boolean"
+          },
+          "sampling": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "WATCH"
+            ]
+          },
+          "localSafety": {
+            "type": "boolean",
+            "description": "vrai pendant une fermeture autonome"
+          }
+        },
+        "required": [
+          "barrier",
+          "light",
+          "siren",
+          "localSafety"
+        ]
+      },
+      "fw:condition": "localSafety == true",
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/state",
+          "contentType": "application/json",
+          "op": [
+            "subscribeevent",
+            "unsubscribeevent"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/state",
+          "mqv:qos": 1,
+          "mqv:retain": true
+        }
+      ]
+    },
+    "offline": {
+      "title": "Station hors ligne",
+      "description": "Message de dernière volonté MQTT (LWT, retenu) : « offline » à la perte de connexion, « online » au retour",
+      "data": {
+        "type": "string",
+        "enum": [
+          "online",
+          "offline"
+        ]
+      },
+      "fw:lastWill": true,
+      "forms": [
+        {
+          "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/status",
+          "contentType": "text/plain",
+          "op": [
+            "subscribeevent",
+            "unsubscribeevent"
+          ],
+          "mqv:controlPacket": "subscribe",
+          "mqv:topic": "floodwatch/stations/underpass-01/status",
+          "mqv:qos": 1,
+          "mqv:retain": true
+        }
+      ]
+    }
+  },
+  "links": [
+    {
+      "rel": "alternate",
+      "href": "mqtts://floodwatch.example.tn:8883/floodwatch/stations/underpass-01/td",
+      "type": "application/td+json"
+    }
+  ],
+  "location": {
+    "type": "Point",
+    "coordinates": [
+      10.1956,
+      36.8625
+    ]
+  },
+  "tags": [
+    "floodwatch",
+    "ariana",
+    "underpass"
+  ],
+  "model": "FloodWatch ESP32",
+  "firmwareVersion": "1.1.0",
+  "fw:stationCode": "underpass-01",
+  "fw:stationType": "UNDERPASS",
+  "fw:zone": "ariana"
+}

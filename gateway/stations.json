@@ -1,0 +1,28 @@
+{
+  "_header": "Module : Cloud of Things – FloodWatch (Sup'Com 2026-2027) | Fichier : gateway/stations.json | Équipe : FloodWatch – Auteur : Ksontini Amine | Créé le 2026-11-03, modifié le 2026-11-03 | Version 1.0",
+  "_role": "Registre des stations servies par la passerelle : zone, type, position GPS (ajoutée aux mesures par Node-RED) et identité de la Thing Description. Codes, types et coordonnées identiques aux stations de démonstration du middleware (SeedManager).",
+  "gatewayId": "gw-ariana-01",
+  "zone": "ariana",
+  "stations": [
+    {
+      "code": "underpass-01",
+      "title": "Passage souterrain Ariana",
+      "type": "UNDERPASS",
+      "zone": "ariana",
+      "lat": 36.8625,
+      "lon": 10.1956,
+      "criticalCm": 20,
+      "sensorHeightCm": 30
+    },
+    {
+      "code": "wadi-01",
+      "title": "Gué de l'oued Ariana",
+      "type": "WADI",
+      "zone": "ariana",
+      "lat": 36.8792,
+      "lon": 10.1637,
+      "criticalCm": 20,
+      "sensorHeightCm": 30
+    }
+  ]
+}
