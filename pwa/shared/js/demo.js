@@ -1,10 +1,22 @@
-/* =============================================================================
-   FloodWatch – backend de démonstration exécuté dans le navigateur.
-   Reproduit le contrat de l'API REST et du flux /ws/live (mêmes formats JSON) avec
-   deux stations simulées (orage cyclique), le moteur d'alerte simplifié et l'automatisme.
-   Permet de présenter les PWA sans serveur (mode ?demo=1).
-   Équipe FloodWatch – Auteur : Kamoun Ahmed – v1.0 – 2026-11-02
-   ============================================================================= */
+/*
+ * ============================================================================
+ *  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+ *  Couche    : front-end
+ *  Fichier   : shared/js/demo.js
+ *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
+ *  Auteur    : Kamoun Ahmed
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-03
+ *  Version   : 1.1
+ * ============================================================================
+ */
+
+/**
+ * MODE DÉMONSTRATION UNIQUEMENT (?demo=1) – module isolé, jamais chargé en fonctionnement normal
+ * (import dynamique dans config.js). Backend simulé dans le navigateur qui reproduit le contrat de
+ * l'API REST et du flux /ws/live (mêmes formats JSON) avec deux stations (orage cyclique), un moteur
+ * d'alerte simplifié et l'automatisme. Sert à présenter les PWA sans serveur ; en production, toute
+ * la logique métier est calculée par l'API Jakarta EE.
+ */
 const RANK = { GREEN: 0, YELLOW: 1, ORANGE: 2, RED: 3 };
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const iso = (t = Date.now()) => new Date(t).toISOString();
@@ -131,20 +143,34 @@ export class DemoBackend {
     if (s.siren !== targets.siren) this.command(s, 'siren', targets.siren ? 'ON' : 'OFF', 'system', 'AUTO');
   }
 
+  /**
+   * Émet une commande : comme la vraie station, l'état de l'actionneur ne change qu'à
+   * l'acquittement (≈ 0,6 s), puis l'état est diffusé par un message « station ».
+   * Une ouverture de barrière au-dessus du seuil rouge est refusée (verrou de sécurité locale).
+   */
   command(s, actuator, value, by, origin) {
     const c = { id: uid(), stationCode: s.code, actuator, value, origin, issuedBy: by, issuedAt: iso(), status: 'PENDING', ackedAt: null, detail: null };
     this.commands.unshift(c);
-    if (actuator === 'barrier') s.barrier = value === 'CLOSE' ? 'CLOSED' : 'OPEN';
-    if (actuator === 'light') s.light = value;
-    if (actuator === 'siren') s.siren = value === 'ON';
-    if (actuator === 'sampling') s.sampling = value;
-    if (actuator === 'barrier' && value === 'CLOSE') {
-      const a = this.alerts.find((x) => x.stationCode === s.code && x.active && x.type === 'LEVEL' && !x.barrierClosedAt);
-      if (a) a.barrierClosedAt = iso(Date.now() + 300);
-    }
-    this.emit('command', c, true);
-    setTimeout(() => { c.status = 'ACKED'; c.ackedAt = iso(); this.emit('command', c, true); }, 400);
-    return c;
+    this.emit('command', { ...c }, true);
+    setTimeout(() => {
+      if (actuator === 'barrier' && value === 'OPEN' && s.levelPct >= s.thresholds.redPct) {
+        Object.assign(c, { status: 'FAILED', ackedAt: iso(), detail: 'verrouillage sécurité' });
+        this.emit('command', { ...c }, true);
+        return;
+      }
+      if (actuator === 'barrier') s.barrier = value === 'CLOSE' ? 'CLOSED' : 'OPEN';
+      if (actuator === 'light') s.light = value;
+      if (actuator === 'siren') s.siren = value === 'ON';
+      if (actuator === 'sampling') s.sampling = value;
+      if (actuator === 'barrier' && value === 'CLOSE') {
+        const a = this.alerts.find((x) => x.stationCode === s.code && x.active && x.type === 'LEVEL' && !x.barrierClosedAt);
+        if (a) a.barrierClosedAt = iso();
+      }
+      Object.assign(c, { status: 'ACKED', ackedAt: iso() });
+      this.emit('command', { ...c }, true);
+      this.emit('station', this.dto(s));
+    }, 600);
+    return { ...c };
   }
 
   dto(s) {

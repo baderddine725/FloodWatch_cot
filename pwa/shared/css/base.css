@@ -1,0 +1,92 @@
+/*
+ * ============================================================================
+ *  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+ *  Couche    : front-end
+ *  Fichier   : shared/css/base.css
+ *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
+ *  Auteur    : Kamoun Ahmed
+ *  Créé le   : 2026-11-03          Modifié le : 2026-11-03
+ *  Version   : 1.0
+ * ============================================================================
+ *  Socle commun aux deux PWA :
+ *   - police Inter servie localement (fonctionne hors connexion, aucun appel à Google Fonts) ;
+ *   - remise à zéro des styles du navigateur, équivalente au « preflight » de Tailwind sur
+ *     lequel la maquette Figma s'appuyait (le CSS de la maquette suppose ces valeurs) ;
+ *   - intégration de Leaflet (marqueurs, bulles, position de l'utilisateur) au style Figma.
+ *  Chargé AVANT la feuille de chaque application.
+ * ============================================================================
+ */
+
+/* ----------------------------------------------------------------------------- police */
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../vendor/fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+
+/* ----------------------------------------------------------------------------- remise à zéro */
+*, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
+html { line-height: 1.5; -webkit-text-size-adjust: 100%; tab-size: 4; }
+body { margin: 0; line-height: inherit; font-family: Inter, system-ui, sans-serif; }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; font-weight: inherit; }
+a { color: inherit; text-decoration: inherit; }
+b, strong { font-weight: bolder; }
+small { font-size: 80%; }
+table { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+button, input, select, optgroup, textarea {
+  font: inherit; font-feature-settings: inherit; letter-spacing: inherit; color: inherit;
+  background-color: transparent; border-radius: 0;
+}
+button, [type='button'], [type='submit'] { appearance: button; }
+ol, ul, menu { list-style: none; }
+img, svg, video, canvas { display: block; vertical-align: middle; }
+img, video { max-width: 100%; height: auto; }
+textarea { resize: vertical; }
+[hidden]:where(:not([hidden='until-found'])) { display: none !important; }
+kbd { font-family: ui-monospace, monospace; font-size: 1em; }
+
+/** Masqué visuellement mais lu par les lecteurs d'écran. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
+}
+
+/* ----------------------------------------------------------------------------- Leaflet × maquette */
+/* Le conteneur d'icône Leaflet est réduit à un point : le marqueur Figma se centre dessus. */
+.fw-leaflet-icon { background: none; border: 0; }
+.fw-leaflet-icon .map-marker { cursor: pointer; }
+.leaflet-container { font-family: Inter, system-ui, sans-serif; background: #eeeee7; }
+.leaflet-container a.leaflet-popup-close-button { display: none; }
+
+/* Bulle au style .map-popup de la maquette */
+.fw-popup .leaflet-popup-content-wrapper {
+  background: var(--card, #fff); color: var(--text, #233246); border: 1px solid var(--border, #e9edf2);
+  border-radius: 8px; box-shadow: 0 4px 20px #00000020; padding: 0;
+}
+.fw-popup .leaflet-popup-content { margin: 12px; width: 195px !important; line-height: 1.4; }
+.fw-popup .leaflet-popup-tip { background: var(--card, #fff); box-shadow: none; }
+.fw-popup strong { display: block; font-size: 11px; }
+.fw-popup span { display: block; font-size: 10px; margin-top: 7px; color: var(--muted, #8190a2); }
+.fw-popup .popup-link {
+  display: flex; gap: 8px; align-items: center; width: 100%; margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border, #e9edf2); color: var(--primary, #0b4f8a); font-size: 10px; cursor: pointer;
+}
+
+/* Position de l'utilisateur (citoyen) */
+.fw-you { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; }
+.fw-you > span {
+  width: 16px; height: 16px; border-radius: 50%; background: #2f80ed; border: 3px solid #fff;
+  box-shadow: 0 0 0 6px #2f80ed33, 0 2px 6px #0003;
+}
+.fw-you > b { margin-top: 4px; font-size: 9px; font-weight: 650; color: #1d4f91; background: #fff; border-radius: 4px; padding: 1px 5px; }
+
+/* Carte indisponible (Leaflet non chargé) */
+.map-unavailable { height: 100%; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted, #8190a2); font-size: 11px; text-align: center; }
+
+/* Tuiles désaturées en mode sombre */
+.dark .leaflet-tile-pane { filter: brightness(.75) contrast(1.1) saturate(.7); }
+
+/* Surcouches de la maquette (étiquette de région, boutons de zoom) au-dessus des tuiles Leaflet */
+.fw-map-overlay > * { z-index: 1000; }
