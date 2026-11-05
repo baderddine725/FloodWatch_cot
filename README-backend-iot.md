@@ -122,6 +122,13 @@ docker compose ps                              # node-red, simulator : (healthy)
 | Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm --build acl-test` | 32 cas (local, Cloud, compte dédié de la passerelle), dont refus d'une poignée de main TLS 1.2 (openssl) |
 | Firmware ESP32 | `cd deploy; docker compose --profile tools run --rm firmware` | compilation PlatformIO |
 | Fonctions du flux Node-RED | `node --test gateway/node-red/test/flows.test.mjs` | 11 tests (filtrage, aberrations, règle 85 %, file d'attente, chien de garde, santé) |
+| Vraie carte ESP32 | procédure en 12 étapes de [`firmware/README.md`](firmware/README.md) | à cocher sur le matériel |
+
+**Intégration continue** : [`.github/workflows/backend-iot.yml`](.github/workflows/backend-iot.yml) lance
+automatiquement ces tests sur GitHub (onglet *Actions*) à chaque push qui touche cette partie : prédiction,
+simulateur, flux Node-RED et scripts, compilation du firmware, puis démarrage réel des brokers, de la
+passerelle et des stations simulées dans Docker, avec les 32 cas ACL / TLS. Le front (`pwa/`) et le
+middleware (`backend/`) ne la déclenchent pas.
 
 ## Scénario de démonstration (≈ 5 min, `SIM_SPEED=3`)
 
