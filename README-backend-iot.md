@@ -184,7 +184,7 @@ Une passerelle compromise ne peut donc ni fausser les mesures d'une autre zone, 
 | Variable (`deploy/.env`) | Rôle |
 |---|---|
 | `GATEWAY_ID`, `GATEWAY_CLOUD_PASSWORD`, `STATION_CODES` | compte de la passerelle Docker (Node-RED) |
-| `GATEWAY_ACCOUNTS_EXTRA` | passerelles Raspberry Pi réelles : `"gw-tunis-01|motdepasse|tunnel-01;..."` |
+| `GATEWAY_ACCOUNTS_EXTRA` | passerelles Raspberry Pi réelles : `"gw-tunis-01\|motdepasse\|tunnel-01;..."` |
 
 Sur le Raspberry Pi : `sudo ./install-gateway.sh <hôte-cloud> gw-tunis-01 <motdepasse> ca.crt` (même identifiant
 et même mot de passe que dans `GATEWAY_ACCOUNTS_EXTRA`).
