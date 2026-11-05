@@ -4,7 +4,7 @@
 #  Couche    : brokers – back-end & IoT (tests)
 #  Fichier   : deploy/scripts/test-acl.sh
 #  Équipe    : FloodWatch – Auteur : Ksontini Amine
-#  Créé le   : 2026-11-03          Modifié le : 2026-11-03          Version : 1.0
+#  Créé le   : 2026-11-03          Modifié le : 2026-11-05          Version : 1.1
 #  Rôle      : vérifie la sécurité des deux brokers : authentification, ACL et TLS 1.3.
 #              MQTT v5 : le broker répond explicitement « Not authorized » à une publication
 #              interdite (en 3.1.1 il l'ignorerait en silence). Les tests de réception vérifient
@@ -12,7 +12,7 @@
 #              Côté Cloud, les cas visent une station fictive « acl-test » : aucune fausse
 #              commande n'est envoyée aux vraies stations.
 #  Lancement : docker compose --profile iot up -d   puis
-#              docker compose --profile test run --rm acl-test
+#              docker compose --profile test run --rm --build acl-test
 # =============================================================================
 set -u
 
@@ -54,14 +54,27 @@ try_receive() {
     host=$1 port=$2 user=$3 pass=$4 filter=$5 pub_user=$6 pub_pass=$7 topic=$8
     shift 8
     received=$(mktemp)
-    # -R : ignore les messages retenus déjà présents
-    mosquitto_sub -h "$host" -p "$port" -u "$user" -P "$pass" "$@" -t "$filter" -R -C 1 -W 4 > "$received" 2>/dev/null &
+    # -R : ignore les messages retenus déjà présents. Le topic peut porter du trafic réel (simulateur) :
+    # on écoute 4 s (jusqu'à 200 messages) et on cherche le message de test parmi eux.
+    mosquitto_sub -h "$host" -p "$port" -u "$user" -P "$pass" "$@" -t "$filter" -R -C 200 -W 4 > "$received" 2>/dev/null &
     sub_pid=$!
     sleep 1
     mosquitto_pub -q 1 -h "$host" -p "$port" -u "$pub_user" -P "$pub_pass" "$@" -t "$topic" -m "test-acl" 2>/dev/null
     wait "$sub_pid" 2>/dev/null
     if grep -q "test-acl" "$received"; then echo "autorisé"; else echo "refusé"; fi
     rm -f "$received"
+}
+
+# Poignée de main TLS avec une SEULE version autorisée côté client (openssl s_client -tls1_2 / -tls1_3).
+# (mosquitto_pub --tls-version fixe seulement une version MINIMALE : il négocierait quand même TLS 1.3.)
+# Usage : try_tls <hôte> <port> <-tls1_2|-tls1_3>  -> « accepté » ou « refusé »
+try_tls() {
+    out=$(echo | openssl s_client -connect "$1:$2" -servername "$1" "$3" -CAfile "$CA" 2>&1)
+    if echo "$out" | grep -q "Verify return code: 0" && ! echo "$out" | grep -q "Cipher is (NONE)"; then
+        echo "accepté"
+    else
+        echo "refusé"
+    fi
 }
 
 for var in LOCAL_GATEWAY_PASSWORD LOCAL_DIAG_PASSWORD STATION_PASSWORD MQTT_API_PASSWORD MQTT_GATEWAY_PASSWORD; do
@@ -93,8 +106,9 @@ report autorisé "$(try_receive $L diag "$LOCAL_DIAG_PASSWORD" 'fw/raw/#' $STATI
 echo "Broker CLOUD ($CLOUD_HOST:8883, TLS 1.3)"
 TLS="--cafile $CA"
 report refusé   "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/telemetry)" "connexion sans TLS sur 8883"
-report refusé   "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/telemetry $TLS --tls-version tlsv1.2)" "client limité à TLS 1.2"
-report autorisé "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/telemetry $TLS --tls-version tlsv1.3)" "client TLS 1.3"
+report refusé   "$(try_tls $CLOUD_HOST 8883 -tls1_2)" "poignée de main TLS 1.2 (seul TLS 1.3 est accepté)"
+report accepté  "$(try_tls $CLOUD_HOST 8883 -tls1_3)" "poignée de main TLS 1.3, certificat vérifié par l'AC"
+report autorisé "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/telemetry $TLS)" "passerelle publie une mesure (TLS)"
 report refusé   "$(try_publish $C - - $S/acl-test/telemetry $TLS)" "connexion anonyme (TLS)"
 report refusé   "$(try_publish $C gateway mauvais-mot-de-passe $S/acl-test/telemetry $TLS)" "mauvais mot de passe (TLS)"
 report autorisé "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/td $TLS)" "passerelle publie une Thing Description"

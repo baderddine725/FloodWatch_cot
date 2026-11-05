@@ -119,7 +119,7 @@ docker compose ps                              # node-red, simulator : (healthy)
 |---|---|---|
 | Prédiction (JUnit 5) | `cd prediction; .\mvnw.cmd verify` | 38 tests |
 | Simulateur + TD (pytest) | `cd simulator; py -m venv .venv; .venv\Scripts\pip install -r requirements-dev.txt; .venv\Scripts\python -m pytest` | 64 tests |
-| Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm acl-test` | 24 cas (local + Cloud) |
+| Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm --build acl-test` | 25 cas (local + Cloud), dont refus d'une poignée de main TLS 1.2 (openssl) |
 | Firmware ESP32 | `cd deploy; docker compose --profile tools run --rm firmware` | compilation PlatformIO |
 | Fonctions du flux Node-RED | `node --test gateway/node-red/test/flows.test.mjs` | 11 tests (filtrage, aberrations, règle 85 %, file d'attente, chien de garde, santé) |
 
@@ -145,7 +145,7 @@ Ouvrir MQTT Explorer sur `localhost:1883` (compte `diag`), l'éditeur Node-RED e
    et alerte « hors ligne » du middleware (45 s).
 7. **Verrou de sécurité** : depuis la PWA Pilotage, demander l'ouverture de la barrière au-dessus du seuil
    rouge. La station répond `ack.ok=false` (« verrouillage sécurité »).
-8. **Sécurité des brokers** : `docker compose --profile test run --rm acl-test`.
+8. **Sécurité des brokers** : `docker compose --profile test run --rm --build acl-test`.
 
 ## Inspiré du cours
 
@@ -161,7 +161,7 @@ j'en ai repris :
 | `main/config/env.config.mjs` + bonne pratique n° 1 (zod) : configuration centralisée validée au démarrage | [`fwsim/config.py`](simulator/fwsim/config.py), [`settings.js`](gateway/node-red/settings.js), [`docker-entrypoint.sh`](gateway/mosquitto/docker-entrypoint.sh) : toutes les erreurs listées, arrêt immédiat |
 | bonne pratique n° 7 : secrets en variables d'environnement, TLS 1.3 uniquement | mots de passe MQTT / Node-RED uniquement dans `deploy/.env` (ignoré par git), `tls_version tlsv1.3` sur le broker Cloud |
 | n° 2 et 3 : modules et couches | simulateur : `config` → `mqtt_service` (infrastructure) → `station` (service) → `wot` / `scenarios` (modèle) ; passerelle : flux Node-RED en 6 blocs |
-| n° 4 : tests avant commit (TDD, XP) | 38 JUnit + 64 pytest + 24 cas ACL, exécutés avant chaque commit |
+| n° 4 : tests avant commit (TDD, XP) | 38 JUnit + 64 pytest + 11 tests Node-RED + 25 cas ACL, exécutés avant chaque commit |
 | n° 5 : patrons | **Strategy** (scénarios de pluie, `OverflowPredictor` côté middleware), **Factory** (TD par type, client MQTT), **Observer** (`on("connect")`, nœud Statut Node-RED), **Retry** (reconnexion exponentielle 1 → 30 s, file d'attente store-and-forward) |
 | n° 9 : journaux structurés | `LOG_FORMAT=json` (simulateur), événements JSON dans Node-RED (`outlier_rejected`, `local_safety`, `queue_flush`…) |
 | n° 10 : contrôle de santé | `GET /health` (Node-RED, simulateur) + `HEALTHCHECK` Docker |

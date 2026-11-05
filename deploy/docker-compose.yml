@@ -87,7 +87,7 @@ services:
   #  Partie Back-end & IoT (Ksontini Amine, 2026-11-03) – activée par profil, ne change
   #  rien au démarrage par défaut :
   #    docker compose --profile iot up -d --build        passerelle + stations simulées
-  #    docker compose --profile test run --rm acl-test   test des comptes, ACL et TLS
+  #    docker compose --profile test run --rm --build acl-test   test des comptes, ACL et TLS
   #    docker compose --profile tools run --rm firmware  compilation du firmware ESP32
   #  Le broker Cloud est le service « mosquitto » ci-dessus (TLS 1.3, port 8883).
   # ===========================================================================
@@ -166,9 +166,10 @@ services:
       - ../gateway/stations.json:/gateway/stations.json:ro
 
   acl-test:                     # test des comptes, ACL et TLS des deux brokers (pile démarrée)
-    image: eclipse-mosquitto:2
+    build:
+      context: ./scripts
+      dockerfile: acl-test.Dockerfile
     profiles: ["test"]
-    entrypoint: ["/bin/sh", "/scripts/test-acl.sh"]
     environment:
       MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:-}
       MQTT_GATEWAY_PASSWORD: ${MQTT_GATEWAY_PASSWORD:-}
@@ -177,7 +178,6 @@ services:
       LOCAL_DIAG_PASSWORD: ${LOCAL_DIAG_PASSWORD:-}
       STATION_PASSWORD: ${STATION_PASSWORD:-}
     volumes:
-      - ./scripts:/scripts:ro
       - ./certs/ca.crt:/certs/ca.crt:ro
 
   firmware:                     # compilation du firmware ESP32 (PlatformIO), sans installation locale

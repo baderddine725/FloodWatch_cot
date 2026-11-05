@@ -5,8 +5,8 @@
  *  Fichier   : gateway/node-red/settings.js
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Ksontini Amine
- *  Créé le   : 2026-11-03          Modifié le : 2026-11-03
- *  Version   : 1.0
+ *  Créé le   : 2026-11-03          Modifié le : 2026-11-05
+ *  Version   : 1.1
  * ============================================================================
  *  Réglages Node-RED de la passerelle FloodWatch. Au démarrage :
  *   1. configuration centralisée : lit et VALIDE toutes les variables d'environnement
@@ -135,6 +135,8 @@ for (const [k, v] of Object.entries(config)) {
     if (!/PASSWORD/.test(k)) process.env[k] = String(v);
 }
 process.env.GATEWAY_BRIDGE_TOPIC = `floodwatch/gateways/${config.GATEWAY_ID}/bridge`;
+// Node-RED ne remplace ${VAR} que si la variable occupe toute la valeur : identifiant calculé ici.
+process.env.GATEWAY_LOCAL_CLIENT_ID = `${config.GATEWAY_ID}-local`;
 installFlows();
 writeCredentials(config);
 console.log(JSON.stringify({

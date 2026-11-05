@@ -12,7 +12,7 @@
     "name": "Mosquitto local (stations)",
     "broker": "${LOCAL_MQTT_HOST}",
     "port": "${LOCAL_MQTT_PORT}",
-    "clientid": "${GATEWAY_ID}-local",
+    "clientid": "${GATEWAY_LOCAL_CLIENT_ID}",
     "autoConnect": true,
     "usetls": false,
     "protocolVersion": "4",
