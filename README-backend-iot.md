@@ -4,8 +4,8 @@
   Fichier   : README-backend-iot.md
   Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
   Auteur    : Ksontini Amine
-  Créé le   : 2026-11-03          Modifié le : 2026-11-03
-  Version   : 1.0
+  Créé le   : 2026-11-03          Modifié le : 2026-11-05
+  Version   : 1.1
 -->
 
 # FloodWatch – partie Back-end & IoT
@@ -19,7 +19,7 @@ Node-RED), broker Cloud (TLS 1.3, comptes, ACL) et bibliothèque de prédiction.
 | [`firmware/`](firmware/) | ESP32 (PlatformIO / Arduino) : HC-SR04, pluie, servo barrière, LED feu, buzzer, LWT, règle de sécurité locale, **Thing Description** publiée |
 | [`simulator/`](simulator/) | stations virtuelles (Python, paquet `fwsim` en couches), TD W3C WoT, 64 tests pytest |
 | [`gateway/`](gateway/) | Mosquitto local (comptes + ACL par station), flux Node-RED, registre `stations.json`, installation Raspberry Pi |
-| [`deploy/mosquitto/`](deploy/mosquitto/) | broker Cloud : TLS 1.3, ACL au moindre privilège, compte observateur |
+| [`deploy/mosquitto/`](deploy/mosquitto/) | broker Cloud : TLS 1.3, ACL au moindre privilège, **un compte par passerelle** limité à ses stations, compte observateur |
 | [`deploy/docker-compose.yml`](deploy/docker-compose.yml) | services `mosquitto-local`, `node-red`, `simulator` (profil `iot`), `acl-test` (profil `test`), `firmware` (profil `tools`) |
 | [`prediction/`](prediction/) | bibliothèque Java 21 autonome : régression linéaire, temps avant débordement, 38 tests JUnit |
 | [`docs/wot/`](docs/wot/) | Thing Descriptions générées des stations de démonstration |
@@ -119,7 +119,7 @@ docker compose ps                              # node-red, simulator : (healthy)
 |---|---|---|
 | Prédiction (JUnit 5) | `cd prediction; .\mvnw.cmd verify` | 38 tests |
 | Simulateur + TD (pytest) | `cd simulator; py -m venv .venv; .venv\Scripts\pip install -r requirements-dev.txt; .venv\Scripts\python -m pytest` | 64 tests |
-| Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm --build acl-test` | 25 cas (local + Cloud), dont refus d'une poignée de main TLS 1.2 (openssl) |
+| Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm --build acl-test` | 32 cas (local, Cloud, compte dédié de la passerelle), dont refus d'une poignée de main TLS 1.2 (openssl) |
 | Firmware ESP32 | `cd deploy; docker compose --profile tools run --rm firmware` | compilation PlatformIO |
 | Fonctions du flux Node-RED | `node --test gateway/node-red/test/flows.test.mjs` | 11 tests (filtrage, aberrations, règle 85 %, file d'attente, chien de garde, santé) |
 
@@ -161,13 +161,33 @@ j'en ai repris :
 | `main/config/env.config.mjs` + bonne pratique n° 1 (zod) : configuration centralisée validée au démarrage | [`fwsim/config.py`](simulator/fwsim/config.py), [`settings.js`](gateway/node-red/settings.js), [`docker-entrypoint.sh`](gateway/mosquitto/docker-entrypoint.sh) : toutes les erreurs listées, arrêt immédiat |
 | bonne pratique n° 7 : secrets en variables d'environnement, TLS 1.3 uniquement | mots de passe MQTT / Node-RED uniquement dans `deploy/.env` (ignoré par git), `tls_version tlsv1.3` sur le broker Cloud |
 | n° 2 et 3 : modules et couches | simulateur : `config` → `mqtt_service` (infrastructure) → `station` (service) → `wot` / `scenarios` (modèle) ; passerelle : flux Node-RED en 6 blocs |
-| n° 4 : tests avant commit (TDD, XP) | 38 JUnit + 64 pytest + 11 tests Node-RED + 25 cas ACL, exécutés avant chaque commit |
+| n° 4 : tests avant commit (TDD, XP) | 38 JUnit + 64 pytest + 11 tests Node-RED + 32 cas ACL, exécutés avant chaque commit |
 | n° 5 : patrons | **Strategy** (scénarios de pluie, `OverflowPredictor` côté middleware), **Factory** (TD par type, client MQTT), **Observer** (`on("connect")`, nœud Statut Node-RED), **Retry** (reconnexion exponentielle 1 → 30 s, file d'attente store-and-forward) |
 | n° 9 : journaux structurés | `LOG_FORMAT=json` (simulateur), événements JSON dans Node-RED (`outlier_rejected`, `local_safety`, `queue_flush`…) |
 | n° 10 : contrôle de santé | `GET /health` (Node-RED, simulateur) + `HEALTHCHECK` Docker |
 
 Aucune clé ni aucun certificat du cours (`jwt-key`, `*.pem`, `dhparam.pem`) n'a été copié. Nos certificats
 sont générés localement dans `deploy/certs/` (ignoré par git).
+
+## Un compte Cloud par passerelle
+
+Chaque passerelle se connecte au broker Cloud avec **son propre compte** (`GATEWAY_ID`, ex. `gw-ariana-01`).
+Au démarrage, [`entrypoint.sh`](deploy/mosquitto/entrypoint.sh) génère ce compte et sa section d'ACL à partir
+de `GATEWAY_ACCOUNTS` (`id|mot de passe|stations`) :
+
+- elle publie les messages montants **de ses stations seulement** et ne lit que **leurs** `cmd` / `config` ;
+- elle ne publie des événements que sous **son** identifiant (`floodwatch/gateways/<id>/…`) ;
+- elle ne peut ni publier de commande, ni se faire passer pour une autre passerelle.
+
+Une passerelle compromise ne peut donc ni fausser les mesures d'une autre zone, ni commander ses barrières.
+
+| Variable (`deploy/.env`) | Rôle |
+|---|---|
+| `GATEWAY_ID`, `GATEWAY_CLOUD_PASSWORD`, `STATION_CODES` | compte de la passerelle Docker (Node-RED) |
+| `GATEWAY_ACCOUNTS_EXTRA` | passerelles Raspberry Pi réelles : `"gw-tunis-01|motdepasse|tunnel-01;..."` |
+
+Sur le Raspberry Pi : `sudo ./install-gateway.sh <hôte-cloud> gw-tunis-01 <motdepasse> ca.crt` (même identifiant
+et même mot de passe que dans `GATEWAY_ACCOUNTS_EXTRA`).
 
 ## Points à valider avec le middleware
 
@@ -179,5 +199,5 @@ sont générés localement dans `deploy/certs/` (ignoré par git).
   l'instant réel ; à utiliser si l'on veut un historique exact.
 - **Acquittements des commandes de la passerelle** : la règle 85 % envoie des commandes avec un UUID
   inconnu du middleware. Leurs `ack` sont ignorés sans erreur (`CommandManager.onAck`).
-- **Compte unique `gateway` sur le Cloud** : toutes les passerelles partagent ce compte (contrat existant).
-  Une ACL par zone demanderait un compte par passerelle.
+- **Compte partagé `gateway` sur le Cloud** : conservé pour la compatibilité (simulateur ou station connectés
+  en direct, ancienne installation). Les passerelles Node-RED utilisent un compte dédié (voir ci-dessous).

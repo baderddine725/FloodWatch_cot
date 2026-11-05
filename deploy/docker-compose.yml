@@ -31,6 +31,9 @@ services:
       MQTT_GATEWAY_USERNAME: ${MQTT_GATEWAY_USERNAME:-gateway}
       MQTT_GATEWAY_PASSWORD: ${MQTT_GATEWAY_PASSWORD:?MQTT_GATEWAY_PASSWORD}
       MQTT_OBSERVER_PASSWORD: ${MQTT_OBSERVER_PASSWORD:-}
+      # comptes dédiés des passerelles (mot de passe vide = non créé) : id|mot de passe|stations ; ...
+      # 1re entrée : passerelle Docker ; GATEWAY_ACCOUNTS_EXTRA : passerelles Raspberry Pi réelles
+      GATEWAY_ACCOUNTS: ${GATEWAY_ID:-gw-ariana-01}|${GATEWAY_CLOUD_PASSWORD:-}|${STATION_CODES:-underpass-01 wadi-01};${GATEWAY_ACCOUNTS_EXTRA:-}
     volumes:
       - ./mosquitto:/mosquitto/config:ro
       - ./certs:/mosquitto/certs:ro
@@ -130,8 +133,8 @@ services:
       LOCAL_MQTT_PASSWORD: ${LOCAL_GATEWAY_PASSWORD:-}
       CLOUD_MQTT_HOST: mosquitto
       CLOUD_MQTT_PORT: "8883"
-      CLOUD_MQTT_USER: ${MQTT_GATEWAY_USERNAME:-gateway}
-      CLOUD_MQTT_PASSWORD: ${MQTT_GATEWAY_PASSWORD:-}
+      CLOUD_MQTT_USER: ${GATEWAY_ID:-gw-ariana-01}      # compte dédié, limité à ses stations
+      CLOUD_MQTT_PASSWORD: ${GATEWAY_CLOUD_PASSWORD:-}
       CLOUD_CA_FILE: /certs/ca.crt
       NODE_RED_ADMIN_PASSWORD: ${NODE_RED_ADMIN_PASSWORD:-}
       MUTE_AFTER_SEC: ${MUTE_AFTER_SEC:-60}
@@ -174,6 +177,8 @@ services:
       MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:-}
       MQTT_GATEWAY_PASSWORD: ${MQTT_GATEWAY_PASSWORD:-}
       MQTT_OBSERVER_PASSWORD: ${MQTT_OBSERVER_PASSWORD:-}
+      GATEWAY_ID: ${GATEWAY_ID:-gw-ariana-01}
+      GATEWAY_CLOUD_PASSWORD: ${GATEWAY_CLOUD_PASSWORD:-}
       LOCAL_GATEWAY_PASSWORD: ${LOCAL_GATEWAY_PASSWORD:-}
       LOCAL_DIAG_PASSWORD: ${LOCAL_DIAG_PASSWORD:-}
       STATION_PASSWORD: ${STATION_PASSWORD:-}

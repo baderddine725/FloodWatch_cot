@@ -4,7 +4,7 @@
 #  Couche    : brokers – back-end & IoT (tests)
 #  Fichier   : deploy/scripts/test-acl.sh
 #  Équipe    : FloodWatch – Auteur : Ksontini Amine
-#  Créé le   : 2026-11-03          Modifié le : 2026-11-05          Version : 1.1
+#  Créé le   : 2026-11-03          Modifié le : 2026-11-05          Version : 1.2
 #  Rôle      : vérifie la sécurité des deux brokers : authentification, ACL et TLS 1.3.
 #              MQTT v5 : le broker répond explicitement « Not authorized » à une publication
 #              interdite (en 3.1.1 il l'ignorerait en silence). Les tests de réception vérifient
@@ -117,6 +117,17 @@ report refusé   "$(try_publish $C gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/
 report autorisé "$(try_receive $C gateway "$MQTT_GATEWAY_PASSWORD" "$S/+/cmd" floodwatch-api "$MQTT_API_PASSWORD" $S/acl-test/cmd $TLS)" \
                 "passerelle reçoit les commandes du middleware"
 report autorisé "$(try_publish $C floodwatch-api "$MQTT_API_PASSWORD" $S/acl-test/cmd $TLS)" "middleware publie une commande"
+if [ -n "${GATEWAY_CLOUD_PASSWORD:-}" ]; then
+    GW=${GATEWAY_ID:-gw-ariana-01}
+    echo "Compte Cloud dédié de la passerelle $GW (limité à ses stations)"
+    report autorisé "$(try_publish $C $GW "$GATEWAY_CLOUD_PASSWORD" $S/$STATION/td $TLS)" "$GW publie pour SA station $STATION"
+    report refusé   "$(try_publish $C $GW "$GATEWAY_CLOUD_PASSWORD" $S/acl-test/telemetry $TLS)" "$GW publie pour une station hors de sa zone"
+    report refusé   "$(try_publish $C $GW "$GATEWAY_CLOUD_PASSWORD" $S/$STATION/cmd $TLS)" "$GW publie une commande"
+    report autorisé "$(try_publish $C $GW "$GATEWAY_CLOUD_PASSWORD" floodwatch/gateways/$GW/bridge $TLS)" "$GW publie SES notifications"
+    report refusé   "$(try_publish $C $GW "$GATEWAY_CLOUD_PASSWORD" floodwatch/gateways/gw-autre/events $TLS)" "$GW se fait passer pour une autre passerelle"
+    report autorisé "$(try_receive $C $GW "$GATEWAY_CLOUD_PASSWORD" "$S/+/cmd" floodwatch-api "$MQTT_API_PASSWORD" $S/$STATION/cmd $TLS)"                     "$GW reçoit les commandes de SA station"
+    report refusé   "$(try_receive $C $GW "$GATEWAY_CLOUD_PASSWORD" "$S/+/cmd" floodwatch-api "$MQTT_API_PASSWORD" $S/acl-test/cmd $TLS)"                     "$GW reçoit les commandes d'une station hors de sa zone"
+fi
 if [ -n "${MQTT_OBSERVER_PASSWORD:-}" ]; then
     report refusé   "$(try_publish $C observer "$MQTT_OBSERVER_PASSWORD" $S/acl-test/cmd $TLS)" "observateur publie une commande"
     report autorisé "$(try_receive $C observer "$MQTT_OBSERVER_PASSWORD" 'floodwatch/#' gateway "$MQTT_GATEWAY_PASSWORD" $S/acl-test/heartbeat $TLS)" \

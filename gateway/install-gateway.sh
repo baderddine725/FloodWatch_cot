@@ -4,9 +4,11 @@
 #  Couche    : passerelle – back-end & IoT
 #  Fichier   : gateway/install-gateway.sh
 #  Équipe    : FloodWatch – Auteur : Ksontini Amine
-#  Créé le   : 2026-11-02          Modifié le : 2026-11-03          Version : 1.1
+#  Créé le   : 2026-11-02          Modifié le : 2026-11-05          Version : 1.2
 #  Rôle      : installation de la passerelle IoT sur Raspberry Pi OS (Bookworm).
 #  Usage     : sudo ./install-gateway.sh <CLOUD_HOST> <GATEWAY_ID> <GATEWAY_PASSWORD> <ca.crt>
+#              GATEWAY_PASSWORD = mot de passe du compte Cloud DÉDIÉ <GATEWAY_ID>, déclaré sur la VM dans
+#              GATEWAY_ACCOUNTS_EXTRA (deploy/.env). Ancien compte partagé : CLOUD_USER=gateway sudo -E ...
 #  v1.1      : Node-RED relaie vers le Cloud (file d'attente, règle locale) ; pont Mosquitto désactivé.
 #              Mot de passe de l'éditeur Node-RED : variable NODE_RED_ADMIN_PASSWORD (sinon aléatoire).
 # =============================================================================
@@ -51,7 +53,7 @@ Environment=LOCAL_MQTT_HOST=127.0.0.1
 Environment=LOCAL_MQTT_PORT=1884
 Environment=CLOUD_MQTT_HOST=$CLOUD_HOST
 Environment=CLOUD_MQTT_PORT=8883
-Environment=CLOUD_MQTT_USER=gateway
+Environment=CLOUD_MQTT_USER=${CLOUD_USER:-$GATEWAY_ID}
 Environment=CLOUD_MQTT_PASSWORD=$GATEWAY_PASSWORD
 Environment=CLOUD_CA_FILE=/etc/mosquitto/certs/floodwatch-ca.crt
 Environment=NODE_RED_ADMIN_PASSWORD=$ADMIN_PW
