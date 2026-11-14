@@ -48,7 +48,7 @@ flowchart LR
 
 ## Contrat MQTT : aligné sur le middleware
 
-Le middleware ([`Topics.java`](backend/api/src/main/java/tn/supcom/cot/api/controllers/managers/Topics.java))
+Le middleware ([`Topics.java`](middleware/api/src/main/java/tn/supcom/cot/api/controllers/managers/Topics.java))
 définit le contrat ; ma partie s'y conforme sans rien changer à son code :
 `floodwatch/stations/{code}/{telemetry|heartbeat|state|status|ack}` vers le Cloud, `…/cmd` et `…/config`
 vers la station, `floodwatch/gateways/{gw}/events` pour la passerelle (détail : [`docs/mqtt-topics.md`](docs/mqtt-topics.md)).
@@ -127,8 +127,8 @@ docker compose ps                              # node-red, simulator : (healthy)
 **Intégration continue** : [`.github/workflows/backend-iot.yml`](.github/workflows/backend-iot.yml) lance
 automatiquement ces tests sur GitHub (onglet *Actions*) à chaque push qui touche cette partie : prédiction,
 simulateur, flux Node-RED et scripts, compilation du firmware, puis démarrage réel des brokers, de la
-passerelle et des stations simulées dans Docker, avec les 32 cas ACL / TLS. Le front (`pwa/`) et le
-middleware (`backend/`) ne la déclenchent pas.
+passerelle et des stations simulées dans Docker, avec les 32 cas ACL / TLS. Le front (`frontend/`) et le
+middleware (`middleware/`) ne la déclenchent pas.
 
 ## Scénario de démonstration (≈ 5 min, `SIM_SPEED=3`)
 

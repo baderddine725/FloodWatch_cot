@@ -38,7 +38,7 @@ Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 Précisez si vous avez utilisé une base de code préexistante.
 
 *   *Code de départ enseignant / squelette du cours :*
-    *   [x] Oui (indiquer quels modules : backend/core, backend/iam, backend/api — squelette Jakarta EE 11 cot.zip fourni par l'enseignant ; corrections détaillées dans [`docs/corrections-code-depart.md`](docs/corrections-code-depart.md))
+    *   [x] Oui (indiquer quels modules : middleware/core, middleware/iam, middleware/api — squelette Jakarta EE 11 cot.zip fourni par l'enseignant ; corrections détaillées dans [`docs/corrections-code-depart.md`](docs/corrections-code-depart.md))
     *   [ ] Non
 *   *Réutilisation d'anciens projets (Années précédentes / GitHub externes) :*
     *   [ ] Oui (Lien du dépôt d'origine : https://github.com...)

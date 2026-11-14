@@ -3,7 +3,7 @@
 | # | Fichier / zone | Problème | Correction |
 |---|---|---|---|
 | 1 | `iam/entities/Grant`, `Identity`, `Tenant` | `RootEntity` et `UUIDPKEntity` utilisés sans import : **le module ne compilait pas** | imports ajoutés ; `Identity` complétée (mot de passe haché, rôles en masque de bits) |
-| 2 | `iam/pom.xml` | module empaqueté en `war` alors qu'il est une bibliothèque de l'API | `jar`, embarqué dans `floodwatch.war` (un seul artefact, conforme au diagramme de déploiement) |
+| 2 | `iam/pom.xml` | module empaqueté en `war` alors qu'il est une bibliothèque de l'API | `jar`, embarqué dans `api-1.0.war` (un seul artefact, conforme au diagramme de déploiement) |
 | 3 | `MqttManager` | l'identifiant client était construit à partir de `mqttClient` (encore `null`) → `null#uuid` | construit à partir de la propriété `mqtt.client.id` |
 | 4 | `MqttManager` | `getValue()` sur `mqtt.broker.username/password/truststore.*` absents de la configuration → **échec du déploiement** | `getOptionalValue()` avec valeurs par défaut, surcharge par variables d'environnement |
 | 5 | `MqttManager` | callback enregistré **après** `connect()` : messages perdus | callback enregistré avant la connexion |

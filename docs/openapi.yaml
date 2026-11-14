@@ -3,16 +3,18 @@ info:
   title: FloodWatch API
   version: "1.0"
   description: |
-    API REST de la plateforme FloodWatch (Jakarta EE 11 / WildFly 40) – Sup'Com, module Cloud of Things 2026-2027.
+    API REST de la plateforme FloodWatch (Jakarta EE 11 / WildFly 42) – Sup'Com, module Cloud of Things 2026-2027.
     Authentification : `POST /auth/login` renvoie un jeton JWT à transmettre dans `Authorization: Bearer <jeton>`.
-    Rôles : OPERATOR (supervision, commandes), ADMIN (stations, seuils, comptes). Les routes publiques servent la PWA Citoyen.
+    Rôles : OPERATOR (supervision, commandes), ADMIN (stations, seuils, comptes). Les routes publiques servent le front-office (espace citoyen).
     Temps réel : WebSocket `/ws/live` (option `?token=<jwt>` pour recevoir alertes et commandes).
   contact: { name: Équipe FloodWatch, url: "https://github.com/baderddine725/FloodWatch_cot" }
 servers:
-  - url: /api
-    description: Derrière Nginx (production)
-  - url: http://localhost:8080/floodwatch/api
-    description: WildFly en local
+  - url: https://api.floodwatch.local/api
+    description: Hôte virtuel api-host (production, derrière Nginx)
+  - url: https://iam.floodwatch.local/api
+    description: Hôte virtuel iam-host – routes /auth/** uniquement
+  - url: http://localhost:8080/api
+    description: WildFly en local (alias « localhost » de api-host)
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }

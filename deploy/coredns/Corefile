@@ -1,0 +1,43 @@
+# =============================================================================
+#  Module   : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Fichier  : deploy/coredns/Corefile
+#  Équipe   : FloodWatch – Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed
+#  Version  : 1.0 – 2026-11-14
+#  Rôle     : serveur DNS du domaine local FloodWatch. Il répond pour les quatre
+#             noms de service (et tout autre nom du domaine) par l'adresse de la
+#             machine qui héberge la pile :
+#
+#               www.<domaine>    front-office (espace citoyen)
+#               admin.<domaine>  back-office (espace pilotage)
+#               api.<domaine>    API REST, WebSocket, Thing Descriptions
+#               iam.<domaine>    authentification
+#               <domaine>        alias du front-office
+#               mqtt.<domaine>   broker MQTT (TLS 1.3, port 8883)
+#
+#  Les deux variables sont injectées par docker compose depuis deploy/.env :
+#    BASE_DOMAIN  domaine local      (ex. floodwatch.local)
+#    PUBLIC_IP    adresse de la pile (ex. 127.0.0.1 en poste de travail,
+#                                     l'IP de la VM en déploiement)
+#  Les requêtes hors du domaine sont transmises aux résolveurs publics, afin que
+#  ce serveur puisse être utilisé comme résolveur unique d'un poste ou d'un réseau.
+# =============================================================================
+
+{$BASE_DOMAIN}:53 {
+    # Zone « joker » : tout nom du domaine pointe sur la pile FloodWatch.
+    template IN A {
+        answer "{{ .Name }} 60 IN A {$PUBLIC_IP}"
+    }
+    # Pas d'IPv6 : réponse vide immédiate (évite l'attente des navigateurs).
+    template IN AAAA {
+        rcode NOERROR
+    }
+    errors
+    log
+}
+
+. {
+    forward . 1.1.1.1 9.9.9.9
+    cache 30
+    errors
+    log
+}

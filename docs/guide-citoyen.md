@@ -1,6 +1,6 @@
 # Manuel utilisateur – FloodWatch Citoyen
 
-**Installer l'application** : ouvrez `https://<adresse>/` sur votre téléphone (ou scannez le QR code affiché
+**Installer l'application** : ouvrez `https://www.<domaine>/` sur votre téléphone (ou scannez le QR code affiché
 près des passages surveillés), puis faites « Ajouter à l'écran d'accueil ». Sur iPhone, l'installation est
 nécessaire pour recevoir les notifications.
 

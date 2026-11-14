@@ -1,0 +1,97 @@
+# =============================================================================
+#  Module   : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Fichier  : middleware/wildfly/configure.cli
+#  Équipe   : FloodWatch – Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed
+#  Version  : 2.0 – 2026-11-14   (WildFly 42, Jakarta EE 11)
+#  Rôle     : configuration de base du serveur, commune à tous les hôtes virtuels :
+#              1. source de données PostgreSQL (variables DB_*) ;
+#              2. MicroProfile Config ;
+#              3. Undertow : en-têtes derrière le proxy, filtres réutilisables
+#                 (sécurité, cache, CORS) et gestionnaire du dossier « shared ».
+#  Les hôtes virtuels eux-mêmes sont ajoutés ensuite par add-host.cli (front-end
+#  statique) et add-api.cli (application WAR) – voir configure.sh.
+#  N.B. « embed-server » / « stop-embedded-server » sont ajoutés par configure.sh.
+# =============================================================================
+
+# ----------------------------------------------------------------- 1. base de données
+# Pilote JDBC PostgreSQL déployé comme bibliothèque
+deploy /tmp/postgresql.jar --name=postgresql.jar
+
+data-source add --name=FloodWatchDS \
+  --jndi-name=java:jboss/datasources/FloodWatchDS \
+  --driver-name=postgresql.jar \
+  --connection-url="jdbc:postgresql://${env.DB_HOST:postgres}:${env.DB_PORT:5432}/${env.DB_NAME:floodwatch}" \
+  --user-name="${env.DB_USER:floodwatch}" \
+  --password="${env.DB_PASSWORD:floodwatch}" \
+  --min-pool-size=2 --max-pool-size=30 \
+  --validate-on-match=true --background-validation=false \
+  --valid-connection-checker-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLValidConnectionChecker \
+  --exception-sorter-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLExceptionSorter
+
+# ----------------------------------------------------------------- 2. MicroProfile Config
+# (normalement présent dans standalone.xml ; ajouté sinon)
+if (outcome != success) of /subsystem=microprofile-config-smallrye:read-resource
+  /extension=org.wildfly.extension.microprofile.config-smallrye:add
+  /subsystem=microprofile-config-smallrye:add
+end-if
+
+# ----------------------------------------------------------------- 3. Undertow
+# (les commandes « set » doivent rester hors du batch)
+# Access-Control-Allow-Origin doit RECOPIER l'Origin du client. Un filtre
+# « response-header » écrit sa valeur telle quelle (le client recevrait le texte
+# « %{i,Origin} ») : seul un « expression-filter » évalue les attributs d'échange.
+set allowOrigin="set(attribute='%{o,Access-Control-Allow-Origin}', value='%{i,Origin}')"
+set httpToHttps="set(attribute='%{o,Location}', value='https://%{i,Host}%{RELATIVE_PATH}'); response-code(302)"
+
+batch
+
+# Nginx termine le TLS : Undertow lit l'adresse et le schéma d'origine dans les
+# en-têtes X-Forwarded-* (journaux d'accès justes, requêtes vues comme sécurisées).
+# Attention : cela ne change PAS l'attribut « %p », qui reste le port du listener
+# (8080) — c'est pourquoi le prédicat HSTS porte sur X-Forwarded-Proto.
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=proxy-address-forwarding,value=true)
+
+# « localhost » est déplacé de default-host vers api-host (accès direct au port 8080
+# en développement et pour Postman, sans DNS).
+/subsystem=undertow/server=default-server/host=default-host:undefine-attribute(name=alias)
+
+# ---- filtres de sécurité -----------------------------------------------------
+/subsystem=undertow/configuration=filter/response-header=hsts-header:add(header-name="Strict-Transport-Security",header-value="max-age=31536000; includeSubDomains")
+/subsystem=undertow/configuration=filter/response-header=content-type-options:add(header-name="X-Content-Type-Options",header-value="nosniff")
+/subsystem=undertow/configuration=filter/response-header=referrer-policy:add(header-name="Referrer-Policy",header-value="strict-origin-when-cross-origin")
+/subsystem=undertow/configuration=filter/response-header=frame-options:add(header-name="X-Frame-Options",header-value="DENY")
+
+# Redirection HTTP -> HTTPS, utilisée par les filter-ref « equals(%p,80) » de
+# add-host.cli et add-api.cli. En production Nginx redirige déjà (et conserve la
+# chaîne de requête) : ce filtre ne sert qu'au mode autonome, sans proxy.
+# ATTENTION à la syntaxe : deux gestionnaires s'enchaînent avec « ; » et JAMAIS avec
+# « and », qui ne combine que des prédicats (sinon UT000045 et le serveur refuse de
+# démarrer, ce qui ne se voit qu'au boot, pas à l'exécution du script).
+/subsystem=undertow/configuration=filter/expression-filter=http-to-https:add(expression=$httpToHttps)
+
+# ---- filtres de cache --------------------------------------------------------
+/subsystem=undertow/configuration=filter/response-header=cache-control:add(header-name="Cache-Control",header-value="public, max-age=3600")
+# Service Workers et manifestes : jamais mis en cache (mise à jour immédiate des PWA)
+/subsystem=undertow/configuration=filter/response-header=no-store:add(header-name="Cache-Control",header-value="no-cache, no-store, must-revalidate")
+
+# ---- filtres CORS ------------------------------------------------------------
+# Les PWA (www., admin.) et l'API (api., iam.) sont sur des origines différentes :
+# les en-têtes CORS sont posés ici, au niveau de l'hôte virtuel, et non dans le code
+# (le filtre JAX-RS CorsFilter reste donc inactif : cors.allowed.origins vide).
+# Chaque filtre est conditionné par un prédicat « regex » sur l'en-tête Origin
+# (voir add-host.cli / add-api.cli) : sans Origin valide, aucun en-tête n'est ajouté.
+/subsystem=undertow/configuration=filter/expression-filter="Access-Control-Allow-Origin":add(expression=$allowOrigin)
+/subsystem=undertow/configuration=filter/response-header="Access-Control-Allow-Methods":add(header-name="Access-Control-Allow-Methods",header-value="GET, POST, PUT, DELETE, OPTIONS")
+/subsystem=undertow/configuration=filter/response-header="Access-Control-Allow-Headers":add(header-name="Access-Control-Allow-Headers",header-value="Authorization, Content-Type, Accept, If-Match, If-None-Match")
+/subsystem=undertow/configuration=filter/response-header="Access-Control-Expose-Headers":add(header-name="Access-Control-Expose-Headers",header-value="ETag, Location")
+/subsystem=undertow/configuration=filter/response-header="Access-Control-Allow-Credentials":add(header-name="Access-Control-Allow-Credentials",header-value="true")
+/subsystem=undertow/configuration=filter/response-header="Access-Control-Max-Age":add(header-name="Access-Control-Max-Age",header-value="3600")
+# Obligatoire dès que Access-Control-Allow-Origin recopie l'Origin du client
+/subsystem=undertow/configuration=filter/response-header=vary-origin:add(header-name="Vary",header-value="Origin")
+
+# ---- ressources communes des deux front-ends --------------------------------
+# Le dossier « shared » (CSS, JS, polices, Leaflet) est servi tel quel sous /shared
+# par les deux hôtes : un seul exemplaire sur le disque, aucune duplication.
+/subsystem=undertow/configuration=handler/file=frontend-shared:add(path="/opt/jboss/wildfly/www/shared",directory-listing=false)
+
+run-batch

@@ -1,7 +1,15 @@
 # =============================================================================
 #  FloodWatch – déploiement Cloud (machine virtuelle IaaS)
 #  Usage : cp .env.example .env && ./scripts/gen-certs.sh <domaine> && docker compose up -d --build
-#  Équipe FloodWatch – v1.0 – 2026-11-02
+#  Équipe FloodWatch – v2.0 – 2026-11-14
+#
+#  Quatre noms DNS, un seul serveur d'applications :
+#    www.<domaine>    front-office (citoyen)   -> WildFly, hôte virtuel www-host
+#    admin.<domaine>  back-office (pilotage)   -> WildFly, hôte virtuel admin-host
+#    api.<domaine>    API REST + WebSocket     -> WildFly, hôte virtuel api-host
+#    iam.<domaine>    authentification         -> WildFly, api-host (routes /api/auth)
+#  Le service « dns » (CoreDNS) résout ce domaine local ; Nginx ne fait plus que
+#  terminer le TLS et relayer vers WildFly en conservant l'en-tête Host.
 # =============================================================================
 name: floodwatch
 
@@ -42,7 +50,12 @@ services:
       - "8883:8883"
 
   api:
-    build: ../backend
+    # Middleware Jakarta EE 11 sur WildFly 42. Sert aussi les deux front-ends
+    # (hôtes virtuels Undertow) : voir middleware/wildfly/add-host.cli.
+    build:
+      context: ../middleware
+      args:
+        BASE_DOMAIN: ${BASE_DOMAIN:-floodwatch.local}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -57,7 +70,7 @@ services:
       MQTT_BROKER_URL: tcp://mosquitto:1883
       MQTT_BROKER_USERNAME: ${MQTT_API_USERNAME:-floodwatch-api}
       MQTT_BROKER_PASSWORD: ${MQTT_API_PASSWORD}
-      MQTT_PUBLIC_URL: mqtts://${SERVER_NAME}:8883
+      MQTT_PUBLIC_URL: mqtts://mqtt.${BASE_DOMAIN:-floodwatch.local}:8883
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD}
@@ -66,7 +79,15 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:floodwatch@supcom.tn}
-      CORS_ALLOWED_ORIGINS: https://${SERVER_NAME}
+      # Vide : les en-têtes CORS sont posés par Undertow sur chaque hôte virtuel
+      # (configure.cli). Ne renseigner que pour un front-end servi hors de WildFly.
+      CORS_ALLOWED_ORIGINS: ""
+    volumes:
+      # Les deux front-ends et leurs ressources communes, servis tels quels par
+      # Undertow. Sur une VM, le dossier est synchronisé par scripts/update.sh.
+      - ../frontend/frontoffice:/opt/jboss/wildfly/www/frontoffice:ro
+      - ../frontend/backoffice:/opt/jboss/wildfly/www/backoffice:ro
+      - ../frontend/shared:/opt/jboss/wildfly/www/shared:ro
     expose:
       - "8080"
 
@@ -76,15 +97,30 @@ services:
     depends_on:
       - api
     environment:
-      SERVER_NAME: ${SERVER_NAME:-localhost}
+      BASE_DOMAIN: ${BASE_DOMAIN:-floodwatch.local}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./certs:/etc/nginx/certs:ro
       - ./certbot:/var/www/certbot:ro
-      - ../pwa:/usr/share/nginx/pwa:ro
     ports:
       - "80:80"
       - "443:443"
+
+  dns:
+    # Domaine local FloodWatch : www, admin, api, iam (et tout autre nom du
+    # domaine) pointent sur PUBLIC_IP ; le reste est transmis aux résolveurs
+    # publics. Voir deploy/coredns/Corefile et docs/deployment.md.
+    image: coredns/coredns:1.12.4
+    restart: unless-stopped
+    command: ["-conf", "/etc/coredns/Corefile"]
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-floodwatch.local}
+      PUBLIC_IP: ${PUBLIC_IP:-127.0.0.1}
+    volumes:
+      - ./coredns:/etc/coredns:ro
+    ports:
+      - "${DNS_PORT:-53}:53/udp"
+      - "${DNS_PORT:-53}:53/tcp"
 
   # ===========================================================================
   #  Partie Back-end & IoT (Ksontini Amine, 2026-11-03) – activée par profil, ne change
@@ -162,7 +198,7 @@ services:
       SIM_SCENARIO: ${SIM_SCENARIO:-storm}
       SIM_SPEED: ${SIM_SPEED:-3}
       SIM_OFFLINE_AFTER: ${SIM_OFFLINE_AFTER:-0}
-      SIM_TD_BROKER_URL: mqtts://${SERVER_NAME:-localhost}:8883
+      SIM_TD_BROKER_URL: mqtts://mqtt.${BASE_DOMAIN:-floodwatch.local}:8883
       SIM_STATIONS_FILE: /gateway/stations.json
       SIM_VERBOSE: ${SIM_VERBOSE:-false}
     volumes:

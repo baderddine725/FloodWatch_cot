@@ -7,7 +7,7 @@
 #  Créé le   : 2026-11-03          Modifié le : 2026-11-03
 #  Version   : 1.0
 # =============================================================================
-"""Contrat MQTT, aligné sur le middleware (backend/.../managers/Topics.java, docs/mqtt-topics.md).
+"""Contrat MQTT, aligné sur le middleware (middleware/.../managers/Topics.java, docs/mqtt-topics.md).
 
 Seul ajout : ``floodwatch/stations/{code}/td`` (Thing Description, retenue). Le middleware ne s'y
 abonne pas et ignore ce type de message sans erreur.

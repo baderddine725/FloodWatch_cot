@@ -20,6 +20,7 @@ on:
       - "deploy/scripts/**"
       - "deploy/docker-compose.yml"
       - "deploy/.env.example"
+      - "deploy/coredns/**"
       - "docs/wot/**"
       - ".github/workflows/backend-iot.yml"
   pull_request:
@@ -32,6 +33,7 @@ on:
       - "deploy/scripts/**"
       - "deploy/docker-compose.yml"
       - "deploy/.env.example"
+      - "deploy/coredns/**"
       - "docs/wot/**"
       - ".github/workflows/backend-iot.yml"
   workflow_dispatch:
@@ -134,8 +136,8 @@ jobs:
                    NODE_RED_ADMIN_PASSWORD GATEWAY_CLOUD_PASSWORD; do
             sed -i "s|^$k=.*|$k=$(openssl rand -hex 12)|" .env
           done
-          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|; s|^SERVER_NAME=.*|SERVER_NAME=localhost|" .env
-          ./scripts/gen-certs.sh localhost
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|; s|^BASE_DOMAIN=.*|BASE_DOMAIN=floodwatch.test|; s|^PUBLIC_IP=.*|PUBLIC_IP=127.0.0.1|" .env
+          ./scripts/gen-certs.sh floodwatch.test 127.0.0.1
       - name: Démarrage des brokers, de la passerelle et des stations simulées (sans le middleware)
         run: docker compose --profile iot up -d --build --wait --wait-timeout 180 mosquitto mosquitto-local node-red simulator
       - name: Passerelle en bonne santé (broker local + Cloud connectés)

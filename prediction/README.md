@@ -10,7 +10,7 @@
 # floodwatch-prediction
 
 Bibliothèque **Java 21** de prédiction de débordement, sans aucune dépendance d'exécution.
-C'est un projet Maven autonome (hors de `backend/`). Le middleware l'intègre quand il le souhaite.
+C'est un projet Maven autonome (hors de `middleware/`). Le middleware l'intègre quand il le souhaite.
 
 ## Ce qu'elle calcule
 
@@ -43,7 +43,7 @@ docker run --rm -v "${PWD}:/w" -w /w maven:3.9-eclipse-temurin-21 sh ./mvnw -B v
 
 ## Intégration dans le middleware (à faire par G. Baderddine)
 
-1. `cd prediction && .\mvnw.cmd install`, puis dans `backend/api/pom.xml` :
+1. `cd prediction && .\mvnw.cmd install`, puis dans `middleware/api/pom.xml` :
 
    ```xml
    <dependency>
@@ -53,7 +53,7 @@ docker run --rm -v "${PWD}:/w" -w /w maven:3.9-eclipse-temurin-21 sh ./mvnw -B v
    </dependency>
    ```
 
-   Le `Dockerfile` du backend ne copie que `core/`, `iam/` et `api/`. Pour une image Docker, il
+   Le `Dockerfile` du middleware ne copie que `core/`, `iam/` et `api/`. Pour une image Docker, il
    faudra soit copier `prediction/` dans le contexte de build, soit coller les 6 classes dans
    `controllers/alerting/`. Elles ne dépendent que du JDK.
 

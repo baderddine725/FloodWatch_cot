@@ -1,6 +1,6 @@
 # Manuel utilisateur – FloodWatch Pilotage
 
-Adresse : `https://<adresse>/pilotage/`, installable comme application. Connexion avec le compte fourni par
+Adresse : `https://admin.<domaine>/`, installable comme application. Connexion avec le compte fourni par
 l'administrateur.
 
 ## Supervision

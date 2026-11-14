@@ -1,0 +1,73 @@
+# =============================================================================
+#  Module   : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Fichier  : middleware/wildfly/add-api.cli
+#  Équipe   : FloodWatch – Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed
+#  Version  : 1.0 – 2026-11-14
+#  Rôle     : ajoute l'hôte virtuel Undertow qui sert l'application WAR du
+#             middleware (REST /api, WebSocket /ws, Thing Descriptions /td).
+#  Usage    : jboss-cli.sh --connect --file=add-api.cli --properties=hosts/api.properties
+#  Propriétés attendues :
+#    api.name      clé courte          (ex. api)  -> hôte « api-host »
+#    api.version   version du WAR      (ex. 1.0)  -> module « api-1.0.war »
+#    api.aliases   noms DNS, séparés par une virgule
+#                  (api.<domaine>,iam.<domaine>,localhost)
+#    api.context   préfixe des journaux d'accès   (ex. floodwatch)
+#    api.iam       nom DNS dédié à l'IAM          (ex. iam.floodwatch.local)
+#    api.domains   domaine de base pour le prédicat CORS
+#  Idempotent : relancer le script ne casse pas une configuration existante.
+#  Deux pièges de jboss-cli, d'où les « set » ci-dessous :
+#   - ${propriete} n'est remplacé que dans l'ADRESSE d'une opération ; dans la
+#     VALEUR d'un paramètre, il est transmis tel quel au serveur (c'est ce qui
+#     permet ${env.X} ailleurs). Les valeurs passent donc par une variable $var.
+#   - la liste d'alias doit être entre guillemets dans :resolve-expression, sinon
+#     la virgule est lue comme un séparateur de paramètres de l'opération.
+#   - les antislash d'une expression régulière sont consommés par les couches
+#     successives de jboss-cli : les regex n'en utilisent aucune ([.] au lieu de
+#     « \. », [0-9] au lieu de « \d »), sinon « \d » finirait en « d » littéral.
+#   - le prédicat du filtre iam-scope utilise « regex(...) » et non « equals(a,b) » :
+#     la forme à deux arguments de « equals » n'est pas acceptée par l'analyseur de
+#     chaînes « prédicat -> gestionnaire » d'Undertow (UT000045).
+#   - « set x="..." » conserve les guillemets dans la variable et y remplace les
+#     ${propriétés} : c'est la seule façon de passer une valeur contenant à la fois
+#     des virgules, des parenthèses et « -> ». Ne pas la réencadrer par \"$x\".
+# =============================================================================
+set pathTo=`:resolve-expression(expression=${api.name}-${api.version}.war)`
+set aliasTo=`:resolve-expression(expression="${api.aliases}")`
+set iamScope="regex(pattern='^${api.iam.regex}(:[0-9]{1,5})?$',value=%{i,Host},full-match=true) and not path-prefix('/api/auth') -> response-code(404)"
+set logPrefix=`:resolve-expression(expression=${api.context}-${api.name})`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^https://([a-zA-Z0-9-]+[.])*${api.domains.regex}(:[0-9]{1,5})?$',value=%{i,Origin},full-match=true)")`
+set escaped=\"$corsRegex\"
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${api.name}-host:read-resource
+    echo ">>> Creation de l hote virtuel de l API et de l IAM"
+    batch
+    /subsystem=undertow/server=default-server/host=${api.name}-host:add(alias=[$aliasTo],default-web-module=$pathTo)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:add
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:write-attribute(name=pattern,value="combined")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:write-attribute(name=prefix,value=$logPrefix)
+    # ---- sécurité ----------------------------------------------------------------
+    # HSTS : Nginx termine le TLS, WildFly voit donc du HTTP sur 8080 et « %p » ne vaut
+    # jamais 443. Le prédicat porte sur X-Forwarded-Proto, posé par Nginx.
+    # http-to-https : volontairement conditionné au port 80, qui n'est JAMAIS celui du
+    # listener derrière le proxy (8080) — sinon WildFly redirigerait les requêtes que
+    # Nginx lui transmet en clair, et la pile bouclerait. Ce filtre ne sert donc qu'en
+    # déploiement autonome, sans proxy.
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=hsts-header:add(predicate="equals(%{i,X-Forwarded-Proto},https)")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=http-to-https:add(predicate="equals(%p,80)")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=content-type-options:add(predicate="true")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=referrer-policy:add(predicate="true")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=no-store:add(predicate="true")
+    # Périmètre du nom « iam.<domaine> » : il ne répond que sur les routes
+    # d'authentification (/api/auth/**) ; tout le reste de l'API y est masqué.
+    /subsystem=undertow/configuration=filter/expression-filter=iam-scope:add(expression=$iamScope)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=iam-scope:add(predicate="true")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Origin":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Methods":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Headers":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Expose-Headers":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Credentials":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Max-Age":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=vary-origin:add(predicate=$escaped)
+    run-batch
+else
+    echo ">>> L hote virtuel existe deja : rien a faire."
+end-if

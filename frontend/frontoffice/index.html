@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+ ============================================================================
+  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+  Couche    : front-end
+  Fichier   : frontoffice/index.html
+  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
+  Auteur    : Kamoun Ahmed
+  Créé le   : 2026-11-02          Modifié le : 2026-11-03
+  Version   : 2.0
+ ============================================================================
+  PWA Citoyen (public, sans compte) : état des routes inondables, alertes géolocalisées,
+  favoris. Servie par WildFly à la racine de www.DOMAINE (hôte virtuel www-host de
+  middleware/wildfly/add-host.cli). L'API REST (api.DOMAINE), l'authentification
+  (iam.DOMAINE) et le flux temps réel sont sur des origines distinctes : voir
+  shared/js/config.js.
+ ============================================================================
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FloodWatch Citoyen – routes inondables</title>
+  <meta name="description" content="État en temps réel des passages inondables du Grand Tunis et alertes de crue près de vous.">
+  <meta name="theme-color" content="#0B4F8A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="/shared/vendor/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/shared/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/shared/css/base.css">
+  <link rel="stylesheet" href="/shared/css/charte.css">
+  <link rel="stylesheet" href="css/citizen.css">
+</head>
+<body data-application="citoyen">
+  <div id="app"></div>
+  <noscript><p style="padding:24px;font-family:sans-serif">FloodWatch Citoyen nécessite JavaScript. En cas de danger, appelez la Protection civile : 198.</p></noscript>
+  <!-- Leaflet est un script classique (expose window.L) : chargé avant le module de l'application. -->
+  <script src="/shared/vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

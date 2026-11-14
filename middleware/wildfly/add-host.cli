@@ -1,0 +1,83 @@
+# =============================================================================
+#  Module   : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
+#  Fichier  : middleware/wildfly/add-host.cli
+#  Équipe   : FloodWatch – Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed
+#  Version  : 1.0 – 2026-11-14
+#  Rôle     : ajoute un hôte virtuel Undertow qui sert un front-end STATIQUE
+#             (frontoffice ou backoffice) directement depuis WildFly.
+#  Usage    : jboss-cli.sh --connect --file=add-host.cli --properties=hosts/www.properties
+#             (à la construction de l'image : voir configure.sh)
+#  Propriétés attendues :
+#    host.key      clé courte de l'hôte      (ex. www)      -> hôte « www-host »
+#    host.path     dossier servi             (ex. /opt/jboss/wildfly/www/frontoffice)
+#    host.shared   gestionnaire des ressources communes      (ex. frontend-shared)
+#    host.aliases  noms DNS, séparés par ,   (ex. www.floodwatch.local,floodwatch.local)
+#    host.domains  domaine de base pour le prédicat CORS     (ex. floodwatch.local)
+#  Les filtres référencés (hsts-header, http-to-https, cache-control, no-store,
+#  content-type-options, referrer-policy, Access-Control-*) sont définis une fois
+#  pour toutes par configure.cli.
+#  Deux pièges de jboss-cli, d'où les « set » ci-dessous :
+#   - ${propriete} n'est remplacé que dans l'ADRESSE d'une opération ; dans la
+#     VALEUR d'un paramètre, il est transmis tel quel au serveur (c'est ce qui
+#     permet ${env.X} ailleurs). Les valeurs passent donc par une variable $var.
+#   - la liste d'alias doit être entre guillemets dans :resolve-expression, sinon
+#     la virgule est lue comme un séparateur de paramètres de l'opération.
+#   - les antislash d'une expression reguliere sont consommes par les couches
+#     successives de jboss-cli : la regex CORS n'en utilise aucun ([.] au lieu de
+#     \. et [0-9] au lieu de \d), sinon « \d » finit en « d » litteral.
+# =============================================================================
+set pathTo=`:resolve-expression(expression=${host.path})`
+set aliasTo=`:resolve-expression(expression="${host.aliases}")`
+set sharedTo=`:resolve-expression(expression=${host.shared})`
+set logPrefix=`:resolve-expression(expression=${host.key}-access)`
+set contentTo=`:resolve-expression(expression=${host.key}-content)`
+set spaPath=`:resolve-expression(expression=${host.path}/index.html)`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^https://([a-zA-Z0-9-]+[.])*${host.domains.regex}(:[0-9]{1,5})?$',value=%{i,Origin},full-match=true)")`
+set escaped=\"$corsRegex\"
+
+batch
+# ---- contenu statique --------------------------------------------------------
+/subsystem=undertow/configuration=handler/file=${host.key}-content:add(path=$pathTo)
+/subsystem=undertow/server=default-server/host=${host.key}-host:add(alias=[$aliasTo])
+/subsystem=undertow/server=default-server/host=${host.key}-host/location=\/:add(handler=$contentTo)
+# Ressources communes aux deux front-ends : /shared -> frontend/shared (un seul exemplaire)
+/subsystem=undertow/server=default-server/host=${host.key}-host/location=\/shared:add(handler=$sharedTo)
+
+# ---- journal d'accès ---------------------------------------------------------
+/subsystem=undertow/server=default-server/host=${host.key}-host/setting=access-log:add
+/subsystem=undertow/server=default-server/host=${host.key}-host/setting=access-log:write-attribute(name=pattern,value="combined")
+/subsystem=undertow/server=default-server/host=${host.key}-host/setting=access-log:write-attribute(name=prefix,value=$logPrefix)
+
+# ---- sécurité ----------------------------------------------------------------
+# HSTS : Nginx termine le TLS, WildFly voit donc du HTTP sur 8080 et « %p » ne vaut
+# jamais 443. Le prédicat porte sur X-Forwarded-Proto, posé par Nginx.
+# http-to-https : volontairement conditionné au port 80, qui n'est JAMAIS celui du
+# listener derrière le proxy (8080) — sinon WildFly redirigerait les requêtes que
+# Nginx lui transmet en clair, et la pile bouclerait. Ce filtre ne sert donc qu'en
+# déploiement autonome, sans proxy.
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=hsts-header:add(predicate="equals(%{i,X-Forwarded-Proto},https)")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=http-to-https:add(predicate="equals(%p,80)")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=content-type-options:add(predicate="true")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=referrer-policy:add(predicate="true")
+# Les deux front-ends ne sont jamais destinés à être encadrés dans une iframe.
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=frame-options:add(predicate="true")
+
+# ---- repli SPA : toute URL inconnue renvoie index.html (routage côté client) --
+/subsystem=undertow/configuration=filter/error-page=spa-${host.key}-router:add(code="404",path=$spaPath)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=spa-${host.key}-router:add(predicate="true")
+
+# ---- cache -------------------------------------------------------------------
+# Enveloppe de l'application : cache navigateur d'une heure…
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=cache-control:add(predicate="not path-suffix('/sw.js') and not path-suffix('.webmanifest')")
+# … sauf le Service Worker et le manifeste, qui publient les mises à jour de la PWA.
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=no-store:add(predicate="path-suffix('/sw.js') or path-suffix('.webmanifest')")
+
+# ---- CORS (uniquement pour une Origin du domaine, en HTTPS) ------------------
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Origin":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Methods":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Headers":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Expose-Headers":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Credentials":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Max-Age":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=vary-origin:add(predicate=$escaped)
+run-batch

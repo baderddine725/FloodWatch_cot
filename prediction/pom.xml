@@ -10,8 +10,8 @@
    Version   : 1.0
   ============================================================================
   Bibliothèque autonome de prédiction de débordement : Java 21 pur, aucune dépendance
-  d'exécution. Projet Maven indépendant de backend/ (le middleware l'ajoute comme
-  dépendance quand il l'intègre). Versions alignées sur backend/pom.xml.
+  d'exécution. Projet Maven indépendant de middleware/ (le middleware l'ajoute comme
+  dépendance quand il l'intègre). Versions alignées sur middleware/pom.xml.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -30,7 +30,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <!-- mêmes versions que backend/pom.xml -->
+        <!-- mêmes versions que middleware/pom.xml -->
         <junit.version>5.11.4</junit.version>
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
         <maven.surefire.plugin.version>3.5.2</maven.surefire.plugin.version>

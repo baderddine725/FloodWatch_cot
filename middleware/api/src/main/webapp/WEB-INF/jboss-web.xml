@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Déploiement WildFly : l'application est la racine de l'hôte virtuel « api-host »
+     (créé par middleware/wildfly/add-api.cli), joignable sur api.<domaine> et
+     iam.<domaine>. L'API REST est donc exposée en https://api.<domaine>/api/ et le
+     flux temps réel en wss://api.<domaine>/ws/live. -->
+<jboss-web>
+    <context-root>/</context-root>
+    <virtual-host>api-host</virtual-host>
+</jboss-web>

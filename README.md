@@ -5,9 +5,10 @@ Projet du module **Cloud of Things** – Sup'Com 2026-2027.
 
 FloodWatch surveille les points bas de la voirie (passages souterrains, gués d'oued). Des stations
 ESP32 mesurent le niveau d'eau et la pluie. Une passerelle Raspberry Pi (Mosquitto + Node-RED)
-relaie les données en MQTT/TLS vers le Cloud. Une API **Jakarta EE 11** calcule le niveau
-d'alerte et le temps avant débordement, puis ferme automatiquement les barrières. Elle prévient
-les citoyens et les opérateurs via deux **PWA** (Web Push). Chaque station ferme aussi sa barrière
+relaie les données en MQTT/TLS vers le Cloud. Un **middleware Jakarta EE 11** (WildFly 42) calcule
+le niveau d'alerte et le temps avant débordement, puis ferme automatiquement les barrières. Il
+prévient les citoyens et les opérateurs via deux **PWA** (Web Push) qu'il sert lui-même, chacune
+sur son propre nom DNS. Chaque station ferme aussi sa barrière
 **localement** au seuil rouge, même sans Cloud.
 
 ```mermaid
@@ -22,30 +23,38 @@ flowchart LR
   end
   subgraph Cloud[VM Cloud IaaS – docker compose]
     MQC[Mosquitto Cloud<br/>MQTT/TLS 8883]
-    API[WildFly 40 – Jakarta EE 11<br/>floodwatch.war]
+    subgraph WF[WildFly 42 – Jakarta EE 11]
+      WWW[www-host<br/>front-office statique]
+      ADM[admin-host<br/>back-office statique]
+      APIH[api-host<br/>api-1.0.war<br/>REST + WebSocket<br/>alias iam-host]
+    end
     DB[(PostgreSQL 16)]
-    NGX[Nginx TLS<br/>PWA + /api + /ws]
+    NGX[Nginx<br/>terminaison TLS<br/>relais Host]
+    DNS[CoreDNS<br/>domaine local]
   end
   ST1 & ST2 -- Wi-Fi WPA2 / MQTT --> MQL
   MQL <--> NR
   MQL -- pont MQTT/TLS --> MQC
-  MQC <--> API
-  API --> DB
-  NGX --> API
-  CIT[PWA Citoyen] -- HTTPS / WSS / Web Push --> NGX
-  PIL[PWA Pilotage] -- HTTPS / WSS / Web Push --> NGX
+  MQC <--> APIH
+  APIH --> DB
+  NGX --> WWW
+  NGX --> ADM
+  NGX --> APIH
+  CIT[Navigateur citoyen<br/>www.domaine] -- HTTPS / WSS / Web Push --> NGX
+  PIL[Navigateur opérateur<br/>admin.domaine] -- HTTPS / WSS / Web Push --> NGX
+  CIT & PIL -. résolution DNS .-> DNS
 ```
 
 ## Contenu du dépôt
 
 | Dossier | Contenu | Responsable |
 |---|---|---|
-| `backend/` | API Jakarta EE 11 (Maven : `core`, `iam`, `api`) → `floodwatch.war`, Dockerfile WildFly 40 | Baderddine (middleware), Amine (persistance, REST, IAM) |
+| `middleware/` | Middleware Jakarta EE 11 (Maven : `core`, `iam`, `api`) → `api-1.0.war`, Dockerfile WildFly 42 et configuration Undertow (`wildfly/`) | Baderddine (middleware), Amine (persistance, REST, IAM) |
 | `firmware/` | Firmware ESP32 (PlatformIO) avec règle de sécurité locale | Amine |
 | `gateway/` | Mosquitto local + pont TLS, flux Node-RED, script d'installation Raspberry Pi | Amine |
 | `simulator/` | Simulateur Python de stations (démos sans matériel) | Amine |
-| `pwa/` | `citoyen/`, `pilotage/`, `shared/` (+ mode démonstration hors serveur) | Ahmed |
-| `deploy/` | `docker-compose.yml`, Nginx, Mosquitto Cloud, certificats, scripts VM | Amine |
+| `frontend/` | `frontoffice/` (espace citoyen), `backoffice/` (espace pilotage), `shared/` (code commun aux deux) + mode démonstration hors serveur | Ahmed |
+| `deploy/` | `docker-compose.yml`, Nginx (TLS), CoreDNS (domaine local), Mosquitto Cloud, certificats, scripts VM | Amine |
 | `postman/` | Collection de tests REST (30 requêtes, 46 assertions) + environnements | Amine |
 | `docs/` | Architecture, topics MQTT, OpenAPI, déploiement, manuels, corrections du code de départ | tous |
 
@@ -53,15 +62,25 @@ flowchart LR
 
 ```bash
 git clone https://github.com/baderddine725/FloodWatch_cot.git && cd FloodWatch_cot/deploy
-cp .env.example .env            # puis changer TOUS les secrets
-./scripts/gen-certs.sh localhost   # ou le nom DNS de la VM
+cp .env.example .env               # puis changer TOUS les secrets
+./scripts/gen-certs.sh floodwatch.local 127.0.0.1    # ou le domaine et l'IP de la VM
 docker compose up -d --build
+sudo ./scripts/dns-hosts.sh floodwatch.local 127.0.0.1   # Windows : .\scripts\dns-hosts.ps1
 ```
 
-- PWA Citoyen : `https://localhost/` · PWA Pilotage : `https://localhost/pilotage/`
-  (comptes `admin` / `operator`, mots de passe de `.env`)
-- API : `https://localhost/api/health` · OpenAPI : `https://localhost/api/openapi`
-- Broker MQTT/TLS : `localhost:8883` (utilisateur `gateway`)
+Quatre noms DNS, un seul serveur d'applications : WildFly sert les deux front-ends
+(hôtes virtuels Undertow) **et** le middleware ; Nginx ne fait que terminer le TLS.
+
+| Adresse | Rôle | Hôte virtuel WildFly |
+|---|---|---|
+| `https://www.floodwatch.local/` | front-office, espace citoyen (public) | `www-host` |
+| `https://admin.floodwatch.local/` | back-office, espace pilotage (`admin` / `operator`) | `admin-host` |
+| `https://api.floodwatch.local/api/health` | API REST, WebSocket, Thing Descriptions | `api-host` |
+| `https://iam.floodwatch.local/api/auth/login` | authentification (seules les routes `/api/auth/**` répondent) | `api-host` + filtre `iam-scope` |
+
+- Broker MQTT/TLS : `mqtt.floodwatch.local:8883` (utilisateur `gateway`)
+- Résolution des noms : le service `dns` (CoreDNS) répond pour tout le domaine ;
+  `scripts/dns-hosts.sh` / `.ps1` est la solution de repli sur un poste de travail.
 
 Pour simuler deux stations, sans matériel :
 
@@ -114,9 +133,9 @@ Decorator (filtre médian du prédicteur), Repository, DTO, Singleton (client MQ
 
 ## Tests
 
-- `cd backend && mvn test` : tests unitaires (moteur d'alerte, prédiction, hystérésis, UUIDv7, JWT, PBKDF2).
+- `cd middleware && mvn test` : tests unitaires (moteur d'alerte, prédiction, hystérésis, UUIDv7, JWT, PBKDF2).
 - `newman run postman/FloodWatch.postman_collection.json -e postman/local.postman_environment.json`
-- Tests de bout en bout réalisés pendant le développement : simulateur → pont TLS → WildFly 40 → PostgreSQL → PWA
+- Tests de bout en bout réalisés pendant le développement : simulateur → pont TLS → WildFly → PostgreSQL → PWA
   (230/230 assertions REST sous ingestion concurrente).
 
 Voir aussi : [architecture](docs/architecture.md) · [topics MQTT](docs/mqtt-topics.md) ·

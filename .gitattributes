@@ -2,7 +2,7 @@
 #  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
 #  Fichier   : .gitattributes
 #  Équipe    : FloodWatch – Auteur : Ksontini Amine
-#  Créé le   : 2026-11-03          Modifié le : 2026-11-03          Version : 1.0
+#  Créé le   : 2026-11-03          Modifié le : 2026-11-14          Version : 1.1
 #  Rôle      : fins de ligne LF pour tout ce qui est exécuté ou lu dans les conteneurs
 #              Linux (sinon « bad interpreter » ou ACL Mosquitto illisible sous Windows).
 # =============================================================================
@@ -12,5 +12,8 @@ mvnw        text eol=lf
 *.acl       text eol=lf
 **/mosquitto/acl  text eol=lf
 Dockerfile  text eol=lf
+*.cli       text eol=lf
+*.properties text eol=lf
+Corefile    text eol=lf
 *.cmd       text eol=crlf
 *.ps1       text eol=crlf
