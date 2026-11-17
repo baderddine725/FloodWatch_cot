@@ -7,6 +7,7 @@
     <persistence-unit name="floodwatch" transaction-type="JTA">
         <jta-data-source>java:jboss/datasources/FloodWatchDS</jta-data-source>
         <class>tn.supcom.cot.iam.entities.Identity</class>
+        <class>tn.supcom.cot.iam.entities.Tenant</class>
         <class>tn.supcom.cot.api.entities.Station</class>
         <class>tn.supcom.cot.api.entities.StationThresholds</class>
         <class>tn.supcom.cot.api.entities.Measurement</class>

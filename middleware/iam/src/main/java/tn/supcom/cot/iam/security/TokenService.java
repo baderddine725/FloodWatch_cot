@@ -25,6 +25,9 @@ import java.util.regex.Pattern;
  * Émission et vérification de jetons JWT signés HMAC-SHA256 (RFC 7519).
  * <p>Implémentation sans dépendance : les revendications sont un objet JSON plat
  * (sub, upn, groups, iss, iat, exp).</p>
+ * <p>Deux sortes de jetons : ceux des UTILISATEURS (rôles dans {@code groups}) et ceux des CLIENTS
+ * D'API (flux OAuth 2.0 « client credentials », RFC 6749 § 4.4) : aucun rôle, mais des portées
+ * ({@code scope}, séparées par des espaces) et les zones géographiques autorisées ({@code zones}).</p>
  */
 public final class TokenService {
     private static final String ISSUER = "floodwatch";
@@ -53,10 +56,34 @@ public final class TokenService {
         this.clock = clock;
     }
 
+    /** Préfixe du sujet d'un jeton de client d'API. */
+    public static final String CLIENT_PREFIX = "client:";
+    /** Zone joker : toutes les zones. */
+    public static final String ALL_ZONES = "*";
+
     /** Revendications vérifiées d'un jeton. */
-    public record Claims(String subject, String username, Set<Role> roles, long issuedAt, long expiresAt) {
+    public record Claims(String subject, String username, Set<Role> roles, long issuedAt, long expiresAt,
+                         Set<String> scopes, Set<String> zones) {
+        public Claims(String subject, String username, Set<Role> roles, long issuedAt, long expiresAt) {
+            this(subject, username, roles, issuedAt, expiresAt, Set.of(), Set.of());
+        }
+
         public boolean hasAnyRole(Collection<String> names) {
             return roles.stream().anyMatch(r -> names.contains(r.name()));
+        }
+
+        /** @return vrai pour un jeton de client d'API (et non d'utilisateur) */
+        public boolean isClient() {
+            return subject != null && subject.startsWith(CLIENT_PREFIX);
+        }
+
+        public boolean hasScope(String scope) {
+            return scopes.contains(scope);
+        }
+
+        /** @return vrai si la zone est autorisée (un utilisateur voit toutes les zones) */
+        public boolean allowsZone(String zone) {
+            return !isClient() || zones.contains(ALL_ZONES) || (zone != null && zones.contains(zone));
         }
     }
 
@@ -68,6 +95,25 @@ public final class TokenService {
         String header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
         String payload = "{\"iss\":\"" + ISSUER + "\",\"sub\":\"" + escape(subject) + "\",\"upn\":\""
                 + escape(username) + "\",\"groups\":" + groups + ",\"iat\":" + now + ",\"exp\":" + (now + ttlSeconds) + "}";
+        String signingInput = b64(header.getBytes(StandardCharsets.UTF_8)) + "." + b64(payload.getBytes(StandardCharsets.UTF_8));
+        return signingInput + "." + b64(hmac(signingInput));
+    }
+
+    /**
+     * Émet un jeton de client d'API : aucun rôle, des portées et des zones.
+     *
+     * @param clientId identifiant public du client
+     * @param scopes   portées accordées (ex. {@code forecast:read})
+     * @param zones    zones autorisées ({@code *} = toutes)
+     */
+    public String issueClient(String clientId, Set<String> scopes, Set<String> zones) {
+        long now = clock.instant().getEpochSecond();
+        String header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+        String payload = "{\"iss\":\"" + ISSUER + "\",\"sub\":\"" + escape(CLIENT_PREFIX + clientId)
+                + "\",\"upn\":\"" + escape(clientId) + "\",\"groups\":[],\"scope\":\""
+                + escape(String.join(" ", new TreeSet<>(scopes))) + "\",\"zones\":\""
+                + escape(String.join(" ", new TreeSet<>(zones))) + "\",\"iat\":" + now
+                + ",\"exp\":" + (now + ttlSeconds) + "}";
         String signingInput = b64(header.getBytes(StandardCharsets.UTF_8)) + "." + b64(payload.getBytes(StandardCharsets.UTF_8));
         return signingInput + "." + b64(hmac(signingInput));
     }
@@ -111,7 +157,7 @@ public final class TokenService {
                 }
             }
             return Optional.of(new Claims(strings.get("sub"), strings.get("upn"), roles,
-                    numbers.getOrDefault("iat", 0L), exp));
+                    numbers.getOrDefault("iat", 0L), exp, words(strings.get("scope")), words(strings.get("zones"))));
         } catch (IllegalArgumentException e) {
             return Optional.empty();
         }
@@ -125,6 +171,11 @@ public final class TokenService {
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    private static Set<String> words(String value) {
+        if (value == null || value.isBlank()) return Set.of();
+        return Set.copyOf(Arrays.asList(value.trim().split("\\s+")));
     }
 
     private static String b64(byte[] bytes) {

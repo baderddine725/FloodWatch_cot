@@ -167,14 +167,17 @@ def test_healthy_sensor_closes_the_barrier(cfg, fake_mqtt):
     assert st.local_safety_rule(now=0) and st.barrier == "CLOSED"
 
 
-def test_blind_sensor_takes_no_decision_like_the_firmware(cfg, fake_mqtt):
-    """Décision ouverte n° 1 : capteur aveugle, la règle ne fait rien, même au-dessus du rouge."""
+def test_blind_sensor_warns_then_closes_under_rain(cfg, fake_mqtt):
+    """Politique de capteur dégradé (firmware 1.3) : avertissement, puis fermeture de précaution."""
     st = VirtualStation(BUILTIN_STATIONS["underpass-01"], cfg, seed=1, mqtt_service=fake_mqtt, physics=QUIET)
     st.scenario, st.sim_t = scenario_for("fault"), 120
-    st.level = 19.0
+    st.level, st.rain = 19.0, 0.3                       # pluie du scénario « fault » : au-dessus du seuil
     reading = st.read_sensor()
     assert not reading.sensor_ok and reading.condition is Condition.DROPOUT
-    assert not st.local_safety_rule(now=0) and st.barrier == "OPEN"
+    assert st.local_safety_rule(now=0) and st.light == "ORANGE" and st.barrier == "OPEN"
+    assert not st.local_safety_rule(now=119) and st.barrier == "OPEN"
+    assert st.local_safety_rule(now=120) and st.barrier == "CLOSED" and not st.siren
+    assert st.safety.mode == "DEGRADED" and st.local_safety
 
 
 def test_faults_option_is_validated():

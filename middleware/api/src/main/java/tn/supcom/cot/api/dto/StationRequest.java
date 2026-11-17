@@ -13,5 +13,6 @@ package tn.supcom.cot.api.dto;
 
 /** Création / modification d'une station (administrateur). */
 public record StationRequest(String code, String name, String description, String type,
-                             Double latitude, Double longitude, String address, ThresholdsDto thresholds) {
+                             Double latitude, Double longitude, String address, ThresholdsDto thresholds,
+                             String zone) {
 }

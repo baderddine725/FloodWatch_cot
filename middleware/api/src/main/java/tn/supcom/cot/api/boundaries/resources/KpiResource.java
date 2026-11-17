@@ -92,6 +92,7 @@ public class KpiResource {
             entry.put("count", row[1]);
             entry.put("avgEchoOk", round(row[2]));
             entry.put("avgEchoSpreadCm", round(row[3]));
+            entry.put("suspect", row[4] == null ? 0L : ((Number) row[4]).longValue());
             verdicts.put(String.valueOf(row[0]), entry);
             total += (Long) row[1];
         }

@@ -35,6 +35,7 @@ public class StationWatchdog {
     private static final Logger LOG = Logger.getLogger(StationWatchdog.class.getName());
     private final Duration offlineAfter = Duration.ofSeconds(AppConfig.getLong("station.offline.after.seconds", 45));
     private final Duration commandTimeout = Duration.ofSeconds(AppConfig.getLong("command.ack.timeout.seconds", 15));
+    private final Duration propagationTtl = Duration.ofMinutes(AppConfig.getLong("propagation.alert.ttl.minutes", 45));
     private int ticks;
 
     @Inject
@@ -50,6 +51,7 @@ public class StationWatchdog {
         try {
             thingManager.checkSilentStations(now, offlineAfter);
             commandManager.expirePending(now, commandTimeout);
+            if (ticks % 12 == 0) thingManager.expirePropagation(now, propagationTtl);   // chaque minute
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Watchdog run failed", e);
         }

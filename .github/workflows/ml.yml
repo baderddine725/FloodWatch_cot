@@ -16,6 +16,8 @@ on:
   push:
     paths:
       - "ml/**"
+      - "firmware/lib/floodwatch_core/**"
+      - "firmware/test/host/**"
       - "backend/simulator/fwsim/**"
       - "backend/simulator/tools/sensor_bench.py"
       - "backend/simulator/requirements.txt"
@@ -23,6 +25,8 @@ on:
   pull_request:
     paths:
       - "ml/**"
+      - "firmware/lib/floodwatch_core/**"
+      - "firmware/test/host/**"
       - "backend/simulator/fwsim/**"
       - "backend/simulator/tools/sensor_bench.py"
       - "backend/simulator/requirements.txt"
@@ -44,7 +48,7 @@ jobs:
           cache: pip
           cache-dependency-path: ml/requirements.txt
       - run: pip install -r ml/requirements.txt
-      - name: Tests (indicateurs, règle de vote commune Python / C, critères)
+      - name: Tests (indicateurs, vote commun Python / C, critères, parité firmware / simulateur)
         run: python -m pytest -q ml/tests
       - name: Réentraînement complet, critères d'acceptation et contrôle de ml/export/
         run: python ml/sensor_anomaly/train.py --check

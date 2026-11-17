@@ -38,10 +38,16 @@ import java.util.Set;
  * Authentification par jeton (Bearer JWT) et contrôle d'accès par rôles
  * ({@code @RolesAllowed}, {@code @PermitAll}, {@code @DenyAll}) sur les ressources REST.
  * Par défaut (aucune annotation), un utilisateur authentifié est exigé.
+ * <p>Clients d'API (jetons « client credentials ») : acceptés UNIQUEMENT sur les ressources
+ * {@link RequiresScope} dont ils détiennent la portée (et sur les ressources publiques) ;
+ * refusés partout ailleurs (moindre privilège, voir {@link ScopePolicy}).</p>
  */
 @Provider
 @Priority(Priorities.AUTHENTICATION)
 public class AuthenticationFilter implements ContainerRequestFilter {
+    /** Attribut de requête portant les {@link TokenService.Claims} vérifiées (absent si anonyme). */
+    public static final String CLAIMS_PROPERTY = "floodwatch.claims";
+
     @Inject
     private SecurityService security;
     @Context
@@ -53,9 +59,22 @@ public class AuthenticationFilter implements ContainerRequestFilter {
         if (claims != null) {
             boolean secure = ctx.getSecurityContext() != null && ctx.getSecurityContext().isSecure();
             ctx.setSecurityContext(new JwtSecurityContext(claims, secure));
+            ctx.setProperty(CLAIMS_PROPERTY, claims);
         }
         var method = resourceInfo == null ? null : resourceInfo.getResourceMethod();
         if (method == null) return; // pré-vol CORS, ressource inconnue...
+
+        var required = method.getAnnotation(RequiresScope.class);
+        if (required == null) required = resourceInfo.getResourceClass().getAnnotation(RequiresScope.class);
+        if (required != null) {
+            switch (ScopePolicy.decide(claims, required.value())) {
+                case ALLOW -> { }
+                case UNAUTHORIZED -> abort(ctx, Response.Status.UNAUTHORIZED, "authentication required");
+                default -> abort(ctx, Response.Status.FORBIDDEN, "insufficient scope: " + required.value());
+            }
+            return;
+        }
+        boolean client = claims != null && claims.isClient();
 
         AnnotatedElement[] scopes = {method, resourceInfo.getResourceClass()};
         for (var scope : scopes) {
@@ -68,13 +87,14 @@ public class AuthenticationFilter implements ContainerRequestFilter {
             if (rolesAllowed != null) {
                 if (claims == null) {
                     abort(ctx, Response.Status.UNAUTHORIZED, "authentication required");
-                } else if (!claims.hasAnyRole(Set.of(rolesAllowed.value()))) {
+                } else if (client || !claims.hasAnyRole(Set.of(rolesAllowed.value()))) {
                     abort(ctx, Response.Status.FORBIDDEN, "insufficient role");
                 }
                 return;
             }
         }
         if (claims == null) abort(ctx, Response.Status.UNAUTHORIZED, "authentication required");
+        else if (client) abort(ctx, Response.Status.FORBIDDEN, "client tokens are limited to scoped services");
     }
 
     private static void abort(ContainerRequestContext ctx, Response.Status status, String message) {

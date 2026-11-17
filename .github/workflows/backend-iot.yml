@@ -84,7 +84,7 @@ jobs:
         with:
           node-version: "22"
       - name: Tests des fonctions du flux Node-RED
-        run: node --test backend/gateway/node-red/test/flows.test.mjs
+        run: node --test backend/gateway/node-red/test/flows.test.mjs backend/gateway/node-red/test/fog.test.mjs
       - name: Syntaxe des réglages et du flux
         run: |
           node --check backend/gateway/node-red/settings.js

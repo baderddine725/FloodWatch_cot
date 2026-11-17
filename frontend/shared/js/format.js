@@ -37,7 +37,7 @@ export const STATION_TYPES = Object.freeze({
 
 /** Types d'alertes (énumération AlertType du backend). */
 export const ALERT_TYPES = Object.freeze({
-  LEVEL: 'Seuil dépassé', OFFLINE: 'Station hors ligne', SENSOR_FAULT: 'Défaut du capteur', LOCAL_SAFETY: 'Sécurité locale',
+  LEVEL: 'Seuil dépassé', OFFLINE: 'Station hors ligne', SENSOR_FAULT: 'Défaut du capteur', LOCAL_SAFETY: 'Sécurité locale', PROPAGATION: 'Crue en amont',
 });
 
 /** Actionneurs et valeurs des commandes. */

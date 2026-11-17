@@ -168,8 +168,8 @@ méthode, pas une performance sur le terrain.
 
 ### 3.4 Classifieur embarqué de validité du capteur (TinyML)
 
-Code : `ml/sensor_anomaly/` (indicateurs, entraînement, export) ; modèle exporté et rapport
-complet : `ml/export/`. Réentraînement et critères : `python ml/sensor_anomaly/train.py`.
+Code : `ml/sensor_anomaly/` (entraînement, génération du C) ; indicateurs :
+`backend/simulator/fwsim/features.py` ; rapport complet : `ml/export/`. Réentraînement et critères : `python ml/sensor_anomaly/train.py`.
 
 **Entrées.** Dix indicateurs que la station connaît, calculables sur l'ESP32 avec deux tampons de
 6 lectures (`features.py`) : échos et dispersion de la salve courante, saut par rapport à la
@@ -205,12 +205,13 @@ Trois enseignements.
    d'équilibre. C'est exactement l'information que la calibration par la passerelle (phase 3)
    apportera.
 
-**Modèle exporté.** Arbre de profondeur 4, 31 nœuds, environ 280 octets de code machine (gcc
-`-Os`, x86-64 : ordre de grandeur, faute de chaîne Xtensa). Le C généré par emlearn est compilé
-puis exécuté sur la journée de test : **il décide exactement comme Python** (100 %). Deux pièges
-évités en route : emlearn convertit par défaut les entrées en entiers 16 bits (un seuil de
-1,5 cm devenait 1), d'où `dtype="float"` ; et une forêt d'emlearn vote à la majorité alors que
-scikit-learn moyenne des probabilités (0,74 % de décisions différentes), d'où la règle de vote
+**Modèle exporté.** Arbre de profondeur 4, 31 nœuds, 171 octets de code machine (gcc `-Os`,
+x86-64 : ordre de grandeur, faute de chaîne Xtensa), livré dans `firmware/lib/floodwatch_core` et,
+en JSON, au simulateur. Le C est compilé puis exécuté sur la journée de test, l'évaluateur Python
+aussi : **tous deux décident exactement comme scikit-learn** (100 %). Pièges rencontrés avec
+emlearn, d'abord utilisé : entrées converties par défaut en entiers 16 bits (un seuil de 1,5 cm
+devenait 1), seuils écrits avec 6 décimales (voir § 3.5) ; et une forêt vote à la majorité alors
+que scikit-learn moyenne des probabilités (0,74 % de décisions différentes), d'où la règle de vote
 majoritaire appliquée partout, y compris pour choisir et évaluer.
 
 **Critères d'acceptation** (`.github/workflows/ml.yml`, à chaque modification du banc ou du code
@@ -219,38 +220,118 @@ point en fausses alertes, sur le capteur nominal comme sur le capteur décalé ;
 code compilé ≤ 16 Ko ; accord C/Python de 100 % ; et `ml/export/` identique à ce que le code
 produit (versions des bibliothèques figées dans `ml/requirements.txt`).
 
-**Ce qui n'est pas fait.** Le modèle n'est pas encore appelé par le firmware : il faut d'abord
-porter `features.py` en C et décider de ce que fait la station d'une lecture jugée fausse (§ 6).
-Il n'a pas été évalué à la cadence de 30 s du régime normal. Et ses chiffres valent pour le
-capteur supposé, pas pour un HC-SR04 réel.
+**Limites.** Le modèle n'a pas été évalué à la cadence de 30 s du régime normal, et ses chiffres
+valent pour le capteur supposé, pas pour un HC-SR04 réel.
+
+### 3.5 Edge : un seul cœur de décision pour l'ESP32 et le simulateur
+
+Toutes les décisions de la station sont prises par `firmware/lib/floodwatch_core` (C++ sans
+dépendance Arduino) : indicateurs du classifieur, classifieur, règle de sécurité locale et
+politique de capteur dégradé. `firmware/src/main.cpp` (v1.3) ne garde que les entrées-sorties. Le
+simulateur en possède le jumeau Python (`fwsim/features.py`, `fwsim/anomaly.py`, `fwsim/core.py`).
+
+**Ils décident pareil, et c'est vérifié.** `ml/tests/test_core_parity.py` compile le cœur C++ sur
+le poste et rejoue des journées simulées (capteur nominal, décalé, randomisé) dans les deux : pour
+chaque lecture, indicateurs au bit près, verdict, barrière, feu, sirène et mode doivent concorder.
+Ce test a trouvé deux vraies divergences, corrigées :
+
+- **Sommes de flottants.** Depuis Python 3.12, `sum()` compense les erreurs d'arrondi (Neumaier),
+  une boucle C++ non : pente de 3,9·10⁻¹⁴ d'un côté, 0 de l'autre. Le jumeau utilise une somme naïve.
+- **Seuils du modèle.** emlearn écrit les seuils avec 6 décimales et compare avec `<`, scikit-learn
+  avec `<=` au seuil exact : une lecture tombant entre les deux était décidée différemment sur
+  l'ESP32. Le code C est désormais généré par `ml/sensor_anomaly/codegen.py` : seuils float32
+  arrondis vers le bas, comparaison `<=`, ce qui est **équivalent par construction** au test de
+  scikit-learn pour toute entrée float32. Le modèle compilé passe de 284 à 171 octets.
+
+**Politique de capteur dégradé** (tranchée, réversible par configuration) :
+
+| Situation | Décision de la station |
+|---|---|
+| Lecture valide ≥ rouge (suspecte ou non) | fermeture, feu rouge, sirène (`LOCAL_SAFETY`) |
+| Lecture suspecte sous l'orange | ne compte **pas** pour rouvrir (ni preuve de décrue, ni remise à zéro) |
+| Capteur aveugle | feu orange (avertissement), levé dès le retour d'une lecture valide |
+| Aveugle **et** pluie ≥ seuil pendant `degradedCloseSec` (120 s) | fermeture de précaution, feu rouge, **sans** sirène (`DEGRADED`) |
+| Réouverture | `reopenDelaySec` de lectures valides et non suspectes sous l'orange |
+
+Le mode (`NORMAL`, `LOCAL_SAFETY`, `DEGRADED`) est publié dans l'état retenu de la station et le
+verdict du classifieur (`suspect`) accompagne chaque mesure jusqu'au Cloud.
+
+### 3.6 Fog : la passerelle raisonne sur la zone
+
+Topologie dans `backend/gateway/stations.json` (v1.1) : une station amont hypothétique
+(`upstream-01`) se déverse dans le gué (`wadi-01`, 480 s de parcours), qui se déverse dans le
+passage souterrain (`underpass-01`, 300 s). Le simulateur en déduit le couplage physique
+(`fwsim/topology.py`) ; la passerelle, ses décisions. Deux nœuds Node-RED, testés
+(`test/fog.test.mjs`) et évalués dans le **code réellement déployé** par
+`backend/simulator/tools/fog_bench.py`, qui rejoue la télémétrie simulée dans `flows.json`
+(`tools/replay.mjs`) :
+
+- **Calibration** (toutes les 5 min) : moindres carrés cumulés avec oubli (demi-vie 24 h) de
+  `dL/dt = a·pluie − b·L + g·Σ L_amont(t − τ)`, dérivée sur 30 s entre niveaux bruts. Une première
+  version (fenêtre de 45 min, différences de 5 s, niveau lissé) ne séparait pas la pluie de l'apport
+  amont (g estimé à −0,005 au lieu de 0,15).
+- **Propagation** : pré-alerte de la station aval et passage en surveillance renforcée quand
+  l'amont est haut et monte (règle), confirmée par le modèle calibré du site aval quand il existe
+  (pic projeté sur le temps de parcours + 15 min, à pluie et amont actuels).
+
+**Résultats sur 24 h simulées** (deux graines, mêmes conclusions) :
+
+| | Résultat |
+|---|---|
+| Calibration (orages sur toute la zone) | a, b, g retrouvés à 1–10 % près, R² 0,82–0,89, pour les trois sites |
+| Pré-alertes fondées (orages de zone) | 0 infondée sur 46–52 au gué ; 4 → 0 au passage souterrain avec le modèle |
+| Pré-alertes infondées (orages sur l'amont seul), passage souterrain | 48 → 5 et 52 → 2 avec le modèle |
+| Pré-alertes infondées (orages sur l'amont seul), gué | 37 sur 46 avec la règle comme avec le modèle |
+| Avance à l'arrivée de la crue (pré-alerte en vigueur) | de 1,9 à 3,0 min (gué), de 1,3 à 1,6 min (passage souterrain) |
+
+Deux conclusions honnêtes. **L'avance gagnée est faible dans cette zone simulée** : chaque site
+réagit en quelques minutes à sa propre pluie, plus vite que les 5 à 8 minutes de parcours ; la
+propagation sert surtout à savoir d'où vient l'eau. **Le modèle filtre les fausses pré-alertes là où
+l'amont ne suffit pas à inonder l'aval** (passage souterrain), mais pas au gué : sans prévision de
+pluie, la projection suppose que l'orage dure, alors que les orages amont du banc sont courts. Une
+prévision météo est donc la prochaine entrée utile — c'est la « prédiction avancée avec API météo »
+du cahier des charges.
+
+### 3.7 Cloud : un service de prévision pour des clients tiers
+
+**Clients d'API** (OAuth 2.0 « client credentials », RFC 6749 § 4.4). L'entité `Tenant`, présente
+mais inutilisée dans le code de départ, devient le client : secret haché (PBKDF2, montré une seule
+fois), portées accordées et zones autorisées. Un administrateur les gère par `/api/clients` ; le
+client obtient un jeton sur **`iam.<domaine>`** (`POST /api/auth/token`, HTTP Basic ou formulaire),
+qui porte `scope` et `zones` mais aucun rôle. **Moindre privilège** : ce jeton n'est accepté que sur
+les ressources annotées `@RequiresScope` dont il détient la portée, et une station hors de ses zones
+répond 404.
+
+**Prévision** (`GET /api/intelligence/stations/{code}/forecast?horizons=5,10,15,30`) :
+
+- méthode : modèle réservoir **calibré par la passerelle** si la calibration est récente (24 h) et
+  explique les mesures (R² ≥ 0,5), sinon la régression linéaire du moteur d'alerte ;
+- apport amont : niveaux amont **déjà mesurés** pendant le temps de parcours, constants au-delà ;
+- `overflowRisk` à chaque horizon : `P(niveau ≥ critique)` sous une erreur gaussienne dont l'écart
+  type est l'**erreur mesurée** de la même méthode au même horizon (historique des prédictions,
+  7 jours), extrapolée en √h au-delà du plus long horizon mesuré, prudente par défaut. L'origine de
+  l'écart type et les hypothèses (pluie constante) figurent dans chaque réponse.
+
+`GET /api/intelligence/zones/{zone}/risk` résume la zone (risque à 30 min par station et
+pré-alertes de propagation en cours). Les pré-alertes de la passerelle deviennent des alertes
+`PROPAGATION` (jaunes) sur la station aval, levées par `propagation_end` ou au bout de 45 min.
+
+**Amélioration continue.** Les prévisions du modèle réservoir sont enregistrées et évaluées comme
+celles de la régression linéaire : `/api/kpi/predictions` compare les deux sur les mêmes mesures
+réelles, et c'est cette erreur mesurée qui règle l'incertitude publiée aux clients.
 
 ## 4. Feuille de route
 
 | Phase | Contenu | État |
 |---|---|---|
 | 1. Fondation | historique des prédictions, diagnostic du capteur de bout en bout | **fait** |
+| 1 bis. État dégradé | avertissement, puis fermeture de précaution d'un capteur aveugle sous la pluie | **fait** (§ 3.5) |
 | 1 ter. Banc simulé | capteur écho par écho, 8 conditions, lectures étiquetées, règle de référence mesurée | **fait** |
-| 1 bis. État dégradé | règle déterministe de la station quand le capteur est aveugle (voir § 6) | à décider |
-| 2. TinyML à l'edge | classifieur de validité du capteur, entraîné sur le banc simulé, exporté en C (emlearn), chaîne ML en CI | **fait** (intégration au firmware à faire) |
-| 3. Fog | topologie amont/aval, propagation entre stations, calibration par station | à faire |
-| 4. Service client | API de prévision multi-horizon pour des clients tiers à portée limitée | à faire |
-
-**Phase 2 – TinyML (suite).** Le modèle (§ 3.4) doit encore s'insérer dans `measure()` du
-firmware, avant que la règle de sécurité locale ne consomme la lecture. Pour que la simulation
-exécute le **même code** que l'ESP32, la logique embarquée (indicateurs, modèle, règle locale)
-sera isolée dans une bibliothèque C++ sans dépendance Arduino, compilée pour l'ESP32 et pour le
-poste de travail. L'anticipation locale du niveau est une seconde expérience, à comparer à une
-régression linéaire embarquée.
-
-**Phase 3 – Fog.** La passerelle raisonne aujourd'hui station par station alors qu'elle seule
-voit toute une zone et survit à une coupure Internet. Elle recevra : un lien amont → aval dans
-`stations.json` et une pré-alerte de la station aval (règle d'abord, modèle ensuite) ; l'estimation
-de la réponse pluie → niveau de chaque site, renvoyée à la station par le topic `config`. Le
-simulateur devra coupler ses stations : aujourd'hui elles sont indépendantes.
-
-**Phase 4 – Service client.** Trois prérequis manquent dans le code : les entités `Tenant` et
-`Grant` ne sont pas persistées et rien ne les utilise ; le jeton ne porte ni portée ni client ;
-`Station` n'a ni zone ni propriétaire côté Cloud.
+| 2. TinyML à l'edge | classifieur entraîné sur le banc, généré en C, intégré au firmware via le cœur portable | **fait** (compilation ESP32 à confirmer) |
+| 3. Fog | topologie, couplage simulé, calibration des sites, propagation règle + modèle | **fait** |
+| 4. Service client | clients OAuth à portée et zones, prévision multi-horizon avec risque mesuré | **fait** |
+| 5. Amélioration continue | deux modèles évalués en continu, erreur mesurée réinjectée dans le risque publié | **fait** (réentraînement automatique : non) |
+| 6. Prévision de pluie | entrée météo pour la propagation et la prévision | à faire |
 
 ## 5. Limites assumées
 
@@ -260,29 +341,33 @@ simulateur devra coupler ses stations : aujourd'hui elles sont indépendantes.
   Garde-fous : hypothèses écrites et paramétrées (`SensorPhysics`), évaluation systématique sur
   un second jeu d'hypothèses, hydrologie tirée au hasard à chaque épisode, et un format de
   lecture qu'un banc réel pourra alimenter tel quel (`summarize()` prend des échos mesurés).
-- **Scores, pas probabilités.** Une sortie de modèle ne s'appelle « probabilité » qu'une fois
-  calibrée sur de vrais épisodes.
+  La station amont et les gains de couplage (0,25/min) sont des hypothèses de démonstration.
+- **Firmware non compilé pour l'ESP32 dans cet environnement** : le cœur portable est compilé et
+  testé sur le poste (g++ `-Wall -Wextra -Werror`), mais la chaîne Xtensa n'a pas pu être
+  téléchargée. La tâche `firmware` de l'intégration continue le compile à chaque modification.
+- **Scores, pas probabilités.** `overflowRisk` est un indice ordonné tant qu'il n'a pas été
+  confronté à de vrais épisodes de crue.
 - **Mise à jour des modèles embarqués.** Un modèle compilé dans le firmware se met à jour par
   reflashage : il n'y a pas d'OTA. Seuls des paramètres passent par MQTT.
 - **Risque d'itinéraire.** Sans réseau routier, le service réaliste note les stations d'un
   couloir autour d'un tracé fourni par le client, pas un trajet origine → destination.
 - **Volume.** Ni `prediction_records` ni `sensor_diagnostics` ne sont purgées (comme
-  `measurements`) : environ 11 500 et 17 000 lignes par station et par jour en surveillance
-  renforcée. Une rétention sera à prévoir avant un déploiement long.
+  `measurements`). Une rétention sera à prévoir avant un déploiement long.
+- **`Grant`** reste inutilisée : elle sert au consentement d'un utilisateur à une application, pas
+  au flux « client credentials ».
 
 ## 6. Décisions ouvertes
 
-1. **État dégradé de la station.** Aujourd'hui `localSafetyRule()` ne fait rien si le capteur est
-   en défaut. Capteur aveugle et pluie soutenue : simple avertissement (feu orange) ou fermeture
-   de précaution ? C'est un choix d'exploitation, à trancher avant de l'écrire.
-2. **Recalage sur matériel.** Tranché : simulation d'abord (§ 3.3). Dès qu'un ESP32 et un
+1. **Recalage sur matériel.** Tranché : simulation d'abord (§ 3.3). Dès qu'un ESP32 et un
    HC-SR04 seront disponibles, quelques séries réelles (capteur dégagé, obstrué, mousse,
    éclaboussures) serviront à recaler `SensorPhysics` et à mesurer l'écart simulation → réel.
+2. **Politique dégradée** (§ 3.5) : choisie pour la sécurité (fermeture de précaution sous la
+   pluie, sans sirène). Réglable par `degradedCloseSec` ; à valider avec l'exploitant.
 3. **OTA.** À ajouter si l'on veut mettre à jour un modèle embarqué sans intervention sur site.
 4. **Arbre ou forêt.** Le critère de choix, fixé avant les résultats, classe d'abord sur les
    lectures fausses attrapées ; la comparaison entre arbre et forêt lui a été ajoutée après une
    première exécution. Il retient l'arbre (82,8 % contre 82,3 % en validation). Mais la
    forêt fait 4 fois moins de fausses alertes en validation (0,6 % contre 2,7 %) et 7 fois moins
-   sur le capteur décalé (4,2 % contre 29,3 %), pour environ 4,7 Ko de code. Combien de fausses
-   alertes vaut une lecture fausse manquée est un choix d'exploitation : une fois tranché, il
-   s'écrit dans le critère de choix et le modèle est réentraîné, sans retoucher aux tests.
+   sur le capteur décalé (4,2 % contre 29,3 %). Combien de fausses alertes vaut une lecture fausse
+   manquée est un choix d'exploitation : une fois tranché, il s'écrit dans le critère de choix et
+   le modèle est réentraîné, sans retoucher aux tests.

@@ -73,6 +73,12 @@ public class AlertRepository extends AbstractRepository<Alert, UUID> {
     }
 
     /** Supprime les alertes d'une station. */
+    /** Alertes actives d'un type, toutes stations confondues. */
+    public List<Alert> findActiveOfType(AlertType type) {
+        return em.createQuery("select a from Alert a where a.active = true and a.type = :t", Alert.class)
+                .setParameter("t", type).getResultList();
+    }
+
     public int deleteByStation(Station station) {
         return em.createQuery("delete from Alert a where a.station = :s").setParameter("s", station).executeUpdate();
     }

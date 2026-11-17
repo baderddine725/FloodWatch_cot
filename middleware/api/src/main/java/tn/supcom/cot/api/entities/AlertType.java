@@ -20,5 +20,7 @@ public enum AlertType {
     /** Mesure incohérente ou capteur signalé défaillant. */
     SENSOR_FAULT,
     /** Fermeture autonome déclenchée par la règle de sécurité locale de la station. */
-    LOCAL_SAFETY
+    LOCAL_SAFETY,
+    /** Pré-alerte de la passerelle (fog) : crue en amont, qui atteindra la station après le temps de parcours. */
+    PROPAGATION
 }

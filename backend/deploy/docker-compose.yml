@@ -41,7 +41,7 @@ services:
       MQTT_OBSERVER_PASSWORD: ${MQTT_OBSERVER_PASSWORD:-}
       # comptes dédiés des passerelles (mot de passe vide = non créé) : id|mot de passe|stations ; ...
       # 1re entrée : passerelle Docker ; GATEWAY_ACCOUNTS_EXTRA : passerelles Raspberry Pi réelles
-      GATEWAY_ACCOUNTS: ${GATEWAY_ID:-gw-ariana-01}|${GATEWAY_CLOUD_PASSWORD:-}|${STATION_CODES:-underpass-01 wadi-01};${GATEWAY_ACCOUNTS_EXTRA:-}
+      GATEWAY_ACCOUNTS: ${GATEWAY_ID:-gw-ariana-01}|${GATEWAY_CLOUD_PASSWORD:-}|${STATION_CODES:-upstream-01 wadi-01 underpass-01};${GATEWAY_ACCOUNTS_EXTRA:-}
     volumes:
       - ./mosquitto:/mosquitto/config:ro
       - ./certs:/mosquitto/certs:ro
@@ -139,7 +139,7 @@ services:
       LOCAL_GATEWAY_PASSWORD: ${LOCAL_GATEWAY_PASSWORD:-}
       LOCAL_DIAG_PASSWORD: ${LOCAL_DIAG_PASSWORD:-}
       STATION_PASSWORD: ${STATION_PASSWORD:-}
-      STATION_CODES: ${STATION_CODES:-underpass-01 wadi-01}
+      STATION_CODES: ${STATION_CODES:-upstream-01 wadi-01 underpass-01}
     volumes:
       - ../gateway/mosquitto:/gateway-config:ro
       - mqttlocaldata:/mosquitto/data
@@ -194,7 +194,7 @@ services:
       SIM_USERNAME: "{code}"            # chaque station se connecte avec son code (ACL par station)
       SIM_PASSWORD: ${STATION_PASSWORD:-}
       SIM_RAW: "true"                   # télémétrie brute -> filtrage Node-RED
-      SIM_STATIONS: ${SIM_STATIONS:-underpass-01,wadi-01}
+      SIM_STATIONS: ${SIM_STATIONS:-upstream-01,wadi-01,underpass-01}
       SIM_SCENARIO: ${SIM_SCENARIO:-storm}
       SIM_FAULTS: ${SIM_FAULTS:-none}     # random : épisodes de défaut du capteur (banc simulé)
       SIM_SPEED: ${SIM_SPEED:-3}

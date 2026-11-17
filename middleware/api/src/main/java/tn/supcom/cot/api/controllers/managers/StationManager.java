@@ -150,6 +150,10 @@ public class StationManager {
             s.setLongitude(req.longitude());
         }
         if (req.address() != null) s.setAddress(req.address());
+        if (req.zone() != null) {
+            if (!req.zone().matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException("invalid zone");
+            s.setZone(req.zone());
+        }
         if (req.thresholds() != null) req.thresholds().applyTo(s.getThresholds());
     }
 }

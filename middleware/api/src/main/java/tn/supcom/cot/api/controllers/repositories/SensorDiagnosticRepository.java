@@ -40,10 +40,12 @@ public class SensorDiagnosticRepository extends AbstractRepository<SensorDiagnos
     /**
      * Répartition des verdicts d'une station sur une période.
      *
-     * @return lignes {@code [verdict, n, moyenne des échos valides, moyenne de la dispersion en cm]}
+     * @return lignes {@code [verdict, n, moyenne des échos valides, moyenne de la dispersion en cm,
+     *         lectures jugées suspectes par le classifieur embarqué]}
      */
     public List<Object[]> verdictStats(Station station, Instant from, Instant to) {
-        return em.createQuery("select d.verdict, count(d), avg(d.echoOk), avg(d.echoSpreadCm) from SensorDiagnostic d "
+        return em.createQuery("select d.verdict, count(d), avg(d.echoOk), avg(d.echoSpreadCm), "
+                        + "sum(case when d.suspect = true then 1 else 0 end) from SensorDiagnostic d "
                         + "where d.station = :s and d.ts between :f and :t group by d.verdict", Object[].class)
                 .setParameter("s", station).setParameter("f", from).setParameter("t", to).getResultList();
     }

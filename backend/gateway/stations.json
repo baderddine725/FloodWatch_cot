@@ -1,9 +1,27 @@
 {
-  "_header": "Module : Cloud of Things – FloodWatch (Sup'Com 2026-2027) | Fichier : backend/gateway/stations.json | Équipe : FloodWatch – Auteur : Ksontini Amine | Créé le 2026-11-03, modifié le 2026-11-03 | Version 1.0",
-  "_role": "Registre des stations servies par la passerelle : zone, type, position GPS (ajoutée aux mesures par Node-RED) et identité de la Thing Description. Codes, types et coordonnées identiques aux stations de démonstration du middleware (SeedManager).",
+  "_header": "Module : Cloud of Things – FloodWatch (Sup'Com 2026-2027) | Fichier : backend/gateway/stations.json | Équipe : FloodWatch – Auteur : Ksontini Amine | Créé le 2026-11-03, modifié le 2026-11-17 | Version 1.1",
+  "_role": "Registre des stations servies par la passerelle : zone, type, position GPS (ajoutée aux mesures par Node-RED) et identité de la Thing Description. Codes, types et coordonnées identiques aux stations de démonstration du middleware (SeedManager). v1.1 : topologie hydrologique. « downstream » : stations situées en aval, avec le temps de parcours de l'eau (travelSec) et le gain de couplage (gain, 1/min : apport en cm/min par cm d'eau en amont). « rainLagSec » : retard d'arrivée de l'orage sur la station. Lue par le simulateur (couplage physique) et par la passerelle (pré-alerte de propagation, calibration). La station amont est une station de démonstration hypothétique.",
   "gatewayId": "gw-ariana-01",
   "zone": "ariana",
   "stations": [
+    {
+      "code": "upstream-01",
+      "title": "Oued Ariana amont",
+      "type": "WADI",
+      "zone": "ariana",
+      "lat": 36.905,
+      "lon": 10.15,
+      "criticalCm": 20,
+      "sensorHeightCm": 30,
+      "rainLagSec": 0,
+      "downstream": [
+        {
+          "code": "wadi-01",
+          "travelSec": 480,
+          "gain": 0.25
+        }
+      ]
+    },
     {
       "code": "underpass-01",
       "title": "Passage souterrain Ariana",
@@ -12,7 +30,9 @@
       "lat": 36.8625,
       "lon": 10.1956,
       "criticalCm": 20,
-      "sensorHeightCm": 30
+      "sensorHeightCm": 30,
+      "rainLagSec": 240,
+      "downstream": []
     },
     {
       "code": "wadi-01",
@@ -22,7 +42,15 @@
       "lat": 36.8792,
       "lon": 10.1637,
       "criticalCm": 20,
-      "sensorHeightCm": 30
+      "sensorHeightCm": 30,
+      "rainLagSec": 120,
+      "downstream": [
+        {
+          "code": "underpass-01",
+          "travelSec": 300,
+          "gain": 0.25
+        }
+      ]
     }
   ]
 }

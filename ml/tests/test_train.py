@@ -31,7 +31,7 @@ def forest(ones: int, total: int = 10):
 
 
 def test_forest_decides_by_strict_majority_like_emlearn():
-    """emlearn compte les votes et retient la classe 0 à égalité : Python doit faire pareil."""
+    """Le code C compte les votes et retient la classe 0 à égalité : Python doit faire pareil."""
     X = np.zeros((3, len(train.FEATURES)), dtype=np.float32)
     assert train.decide(forest(6), X).tolist() == [1, 1, 1]
     assert train.decide(forest(5), X).tolist() == [0, 0, 0]       # égalité 5-5 : lecture plausible
@@ -48,6 +48,7 @@ def test_score_counts_only_accepted_good_and_bad():
 
 def _report(model_nominal, model_shifted, **selected):
     sel = {"depth": 4, "nodes": 31, "meets_false_alarm_limit": True, "text_bytes_x86_Os": 300, "c_agreement": 1.0,
+           "py_agreement": 1.0,
            **selected}
     rule = {"bad_recall": 0.6, "false_alarm": 0.1}
     return {"protocol": {"exported_experiment": "randomized"}, "experiments": {"randomized": {
@@ -64,3 +65,18 @@ def test_gate_requires_beating_the_rule_on_both_sensors():
     assert len(problems) == 1 and "capteur décalé" in problems[0]
     assert any("Python" in p for p in train.gate(_report(good, good, c_agreement=0.9926)))
     assert any("code compilé" in p for p in train.gate(_report(good, good, text_bytes_x86_Os=20_000)))
+
+
+def test_thresholds_are_rounded_down_so_comparisons_match_exactly():
+    """x <= arrondi_bas(s) <=> x <= s pour tout float32 x : C, simulateur et scikit-learn concordent."""
+    from sensor_anomaly.codegen import c_float, floor_f32
+
+    rng = np.random.default_rng(0)
+    for s in rng.normal(0, 3, 2000):
+        t = floor_f32(float(s))
+        assert t <= s and float(np.float32(t)) == t
+        lo = np.float32(t)
+        hi = np.nextafter(lo, np.float32(np.inf))
+        assert (float(lo) <= s) == (float(lo) <= t) and (float(hi) <= s) == (float(hi) <= t)
+        assert float(np.float32(c_float(t).rstrip("f"))) == t        # le littéral C relit le même float
+

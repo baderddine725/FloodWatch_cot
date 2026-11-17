@@ -22,6 +22,7 @@ import jakarta.transaction.Transactional;
 import tn.supcom.cot.api.controllers.alerting.AlertEngine;
 import tn.supcom.cot.api.controllers.alerting.AlertLevel;
 import tn.supcom.cot.api.controllers.alerting.Sample;
+import tn.supcom.cot.api.controllers.intelligence.ForecastService;
 import tn.supcom.cot.api.controllers.repositories.MeasurementRepository;
 import tn.supcom.cot.api.controllers.repositories.SensorDiagnosticRepository;
 import tn.supcom.cot.api.controllers.repositories.StationRepository;
@@ -62,7 +63,11 @@ public class ThingManager {
     @Inject
     private SensorDiagnosticRepository diagnostics;
     @Inject
+    private tn.supcom.cot.api.controllers.repositories.AlertRepository alertRepository;
+    @Inject
     private PredictionHistory predictionHistory;
+    @Inject
+    private ForecastService forecasts;
 
     private final AlertEngine engine = new AlertEngine();
 
@@ -136,6 +141,11 @@ public class ThingManager {
             try {
                 predictionHistory.record(station.getId(), result.prediction(), engine.modelId(), now,
                         t.getSensorHeightCm());
+                // second modèle, évalué sur les mêmes mesures : réservoir calibré par la passerelle
+                int[] horizons = predictionHistory.horizonsSec();
+                double[] seconds = java.util.Arrays.stream(horizons).asDoubleStream().toArray();
+                forecasts.reservoirLevels(station, seconds, now).ifPresent(levels -> predictionHistory.recordLevels(
+                        station.getId(), ForecastService.RESERVOIR, now, station.getLevelCm(), horizons, levels));
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "Prediction history unavailable for " + code, e);
             }
@@ -177,6 +187,7 @@ public class ThingManager {
             if (msg.containsKey("sampling")) station.setSampling(enumOf(SamplingMode.class, msg.getString("sampling"), SamplingMode.NORMAL));
             boolean wasLocal = station.isLocalSafety();
             if (msg.containsKey("localSafety")) station.setLocalSafety(bool(msg, "localSafety"));
+            if (msg.containsKey("mode")) station.setStationMode(msg.getString("mode", null));
             if (station.isLocalSafety() && !wasLocal) {
                 alertManager.raise(station, AlertType.LOCAL_SAFETY, AlertLevel.RED,
                         "Fermeture autonome par la règle de sécurité locale de la station", now);
@@ -215,8 +226,38 @@ public class ThingManager {
     }
 
     /** Événement remonté par une passerelle Node-RED (station muette, passerelle démarrée...). */
+    @Transactional
     public void onGatewayEvent(String gatewayId, JsonObject msg) {
         LOG.info(() -> "Gateway " + gatewayId + " event: " + msg);
+        var now = Instant.now();
+        switch (msg.getString("type", "")) {
+            // fog : la passerelle a vu monter une station amont -> pré-alerte de la station aval
+            case "propagation_alert" -> stations.findByCode(msg.getString("to", "")).ifPresent(s -> {
+                String text = String.format(Locale.FRANCE, "Crue en amont : %s à %.0f %% (%+.1f cm/min), arrivée estimée "
+                                + "dans %d min", msg.getString("from", "?"), number(msg, "upstreamPct", 0),
+                        number(msg, "upstreamSlope", 0), Math.round(number(msg, "etaSec", 0) / 60.0));
+                alertManager.raise(s, AlertType.PROPAGATION, AlertLevel.YELLOW, text, now);
+                broadcastStation(s);
+            });
+            case "propagation_end" -> stations.findByCode(msg.getString("to", ""))
+                    .ifPresent(s -> alertManager.resolve(s, AlertType.PROPAGATION, now));
+            // fog : réponse du site estimée par la passerelle, utilisée par le service de prévision
+            case "calibration" -> stations.findByCode(msg.getString("station", "")).ifPresent(s -> {
+                var links = new StringBuilder();
+                if (msg.get("upstream") instanceof JsonArray ups) {
+                    for (JsonValue u : ups) {
+                        if (u instanceof JsonObject o && o.containsKey("code")) {
+                            if (!links.isEmpty()) links.append(',');
+                            links.append(o.getString("code")).append(':').append(Math.round(number(o, "travelSec", 0)));
+                        }
+                    }
+                }
+                Double samples = numberOrNull(msg, "n");
+                s.calibrate(numberOrNull(msg, "a"), numberOrNull(msg, "b"), numberOrNull(msg, "g"),
+                        numberOrNull(msg, "r2"), samples == null ? null : (int) Math.round(samples), links.toString(), now);
+            });
+            default -> { /* station_mute, gateway_alive... : diffusés tels quels */ }
+        }
         live.fire(new LiveMessage("gateway", Map.of("gateway", gatewayId, "event", msg.toString()), true));
     }
 
@@ -234,6 +275,22 @@ public class ThingManager {
             broadcastStation(s);
         }
         return silent.size();
+    }
+
+    /**
+     * Lève les pré-alertes de propagation trop anciennes (passerelle redémarrée sans envoyer
+     * « propagation_end ») : au-delà de {@code ttl}, une pré-alerte n'a plus de sens.
+     */
+    @Transactional
+    public int expirePropagation(Instant now, Duration ttl) {
+        int n = 0;
+        for (var a : alertRepository.findActiveOfType(AlertType.PROPAGATION)) {
+            if (a.getRaisedAt().isBefore(now.minus(ttl))) {
+                alertManager.resolve(a.getStation(), AlertType.PROPAGATION, now);
+                n++;
+            }
+        }
+        return n;
     }
 
     private void markOffline(Station station, Instant now, String reason) {
@@ -262,18 +319,23 @@ public class ThingManager {
     private void recordDiagnostics(Station station, JsonObject msg, SensorVerdict verdict, Double level, Instant now) {
         Double raw = msg.containsKey("rawLevelCm") ? numberOrNull(msg, "rawLevelCm") : level;
         diagnostics.persist(new SensorDiagnostic(station, now, verdict, raw, intOrNull(msg, "echoOk"),
-                numberOrNull(msg, "echoSpreadCm")));
+                numberOrNull(msg, "echoSpreadCm"), boolOrNull(msg, "suspect")));
         if (!(msg.get("outliers") instanceof JsonArray outliers)) return;
         for (JsonValue item : outliers) {
             if (!(item instanceof JsonObject o)) continue;
             Instant ts = o.get("ts") instanceof JsonNumber n ? Instant.ofEpochMilli(n.longValue()) : now;
             diagnostics.persist(new SensorDiagnostic(station, ts, SensorVerdict.OUTLIER, numberOrNull(o, "levelCm"),
-                    intOrNull(o, "echoOk"), numberOrNull(o, "echoSpreadCm")));
+                    intOrNull(o, "echoOk"), numberOrNull(o, "echoSpreadCm"), boolOrNull(o, "suspect")));
         }
     }
 
     private static Double numberOrNull(JsonObject o, String key) {
         return o.get(key) instanceof JsonNumber n ? n.doubleValue() : null;
+    }
+
+    private static Boolean boolOrNull(JsonObject o, String key) {
+        var v = o.get(key);
+        return v == JsonValue.TRUE ? Boolean.TRUE : v == JsonValue.FALSE ? Boolean.FALSE : null;
     }
 
     private static Integer intOrNull(JsonObject o, String key) {

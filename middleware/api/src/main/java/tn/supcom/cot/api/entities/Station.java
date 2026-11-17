@@ -85,6 +85,28 @@ public class Station extends UUIDPKEntity {
     private ControlMode controlMode = ControlMode.AUTO;
     @Column(name = "local_safety", nullable = false)
     private boolean localSafety;
+    /** Mode de décision de la station : NORMAL, LOCAL_SAFETY ou DEGRADED (capteur aveugle). */
+    @Column(name = "station_mode", length = 16)
+    private String stationMode;
+    /** Zone géographique (périmètre des clients d'API), ex. « ariana ». */
+    @Column(length = 64)
+    private String zone;
+    /** Réponse du site estimée par la passerelle : dL/dt = a·pluie − b·L + g·Σ L_amont(t − τ). */
+    @Column(name = "response_a")
+    private Double responseA;
+    @Column(name = "response_b")
+    private Double responseB;
+    @Column(name = "response_g")
+    private Double responseG;
+    @Column(name = "calibration_r2")
+    private Double calibrationR2;
+    @Column(name = "calibration_samples")
+    private Integer calibrationSamples;
+    @Column(name = "calibrated_at")
+    private Instant calibratedAt;
+    /** Stations amont et temps de parcours, « code:secondes,code2:secondes » (topologie de la passerelle). */
+    @Column(name = "upstream_links", length = 512)
+    private String upstreamLinks;
     private String firmware;
     private Integer rssi;
     @Column(name = "uptime_sec")
@@ -145,6 +167,27 @@ public class Station extends UUIDPKEntity {
     public void setControlMode(ControlMode controlMode) { this.controlMode = controlMode; }
     public boolean isLocalSafety() { return localSafety; }
     public void setLocalSafety(boolean localSafety) { this.localSafety = localSafety; }
+    public String getStationMode() { return stationMode; }
+    public String getZone() { return zone; }
+    public void setZone(String zone) { this.zone = zone; }
+    public Double getResponseA() { return responseA; }
+    public Double getResponseB() { return responseB; }
+    public Double getResponseG() { return responseG; }
+    public Double getCalibrationR2() { return calibrationR2; }
+    public Integer getCalibrationSamples() { return calibrationSamples; }
+    public Instant getCalibratedAt() { return calibratedAt; }
+    public String getUpstreamLinks() { return upstreamLinks; }
+    /** Enregistre la calibration reçue de la passerelle. */
+    public void calibrate(Double a, Double b, Double g, Double r2, Integer samples, String upstreamLinks, Instant at) {
+        this.responseA = a;
+        this.responseB = b;
+        this.responseG = g;
+        this.calibrationR2 = r2;
+        this.calibrationSamples = samples;
+        this.upstreamLinks = upstreamLinks;
+        this.calibratedAt = at;
+    }
+    public void setStationMode(String stationMode) { this.stationMode = stationMode; }
     public String getFirmware() { return firmware; }
     public void setFirmware(String firmware) { this.firmware = firmware; }
     public Integer getRssi() { return rssi; }

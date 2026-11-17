@@ -43,18 +43,21 @@ public class SensorDiagnostic extends UUIDPKEntity {
     /** Écart max − min entre les échos valides de la salve, en cm. */
     @Column(name = "echo_spread_cm")
     private Double echoSpreadCm;
+    /** Verdict du classifieur embarqué de la station (firmware >= 1.3) ; absent sinon. */
+    private Boolean suspect;
 
     protected SensorDiagnostic() {
     }
 
     public SensorDiagnostic(Station station, Instant ts, SensorVerdict verdict, Double rawLevelCm,
-                            Integer echoOk, Double echoSpreadCm) {
+                            Integer echoOk, Double echoSpreadCm, Boolean suspect) {
         this.station = station;
         this.ts = ts;
         this.verdict = verdict;
         this.rawLevelCm = rawLevelCm;
         this.echoOk = echoOk;
         this.echoSpreadCm = echoSpreadCm;
+        this.suspect = suspect;
     }
 
     public Station getStation() { return station; }
@@ -63,4 +66,5 @@ public class SensorDiagnostic extends UUIDPKEntity {
     public Double getRawLevelCm() { return rawLevelCm; }
     public Integer getEchoOk() { return echoOk; }
     public Double getEchoSpreadCm() { return echoSpreadCm; }
+    public Boolean getSuspect() { return suspect; }
 }

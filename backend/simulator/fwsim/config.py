@@ -52,12 +52,17 @@ class StationInfo:
     lon: float = 0.0
     critical_cm: float = 20.0
     sensor_height_cm: float = 30.0
+    #: stations aval : ({"code", "travelSec", "gain"}, ...) — voir fwsim/topology.py
+    downstream: tuple = ()
+    #: retard d'arrivée de l'orage sur cette station (s)
+    rain_lag_s: float = 0.0
 
 
 #: stations de démonstration du middleware (SeedManager), si backend/gateway/stations.json est absent
 BUILTIN_STATIONS = {
     "underpass-01": StationInfo("underpass-01", "Passage souterrain Ariana", "UNDERPASS", "ariana", 36.8625, 10.1956),
     "wadi-01": StationInfo("wadi-01", "Gué de l'oued Ariana", "WADI", "ariana", 36.8792, 10.1637),
+    "upstream-01": StationInfo("upstream-01", "Oued Ariana amont", "WADI", "ariana", 36.9050, 10.1500),
 }
 
 
@@ -157,7 +162,8 @@ def load_registry(path: Path | None) -> dict[str, StationInfo]:
         registry[s["code"]] = StationInfo(
             code=s["code"], title=s.get("title", s["code"]), type=s.get("type", "OTHER"),
             zone=s.get("zone", data.get("zone", "default")), lat=float(s.get("lat", 0)), lon=float(s.get("lon", 0)),
-            critical_cm=float(s.get("criticalCm", 20)), sensor_height_cm=float(s.get("sensorHeightCm", 30)))
+            critical_cm=float(s.get("criticalCm", 20)), sensor_height_cm=float(s.get("sensorHeightCm", 30)),
+            downstream=tuple(dict(d) for d in s.get("downstream", [])), rain_lag_s=float(s.get("rainLagSec", 0)))
     return registry
 
 

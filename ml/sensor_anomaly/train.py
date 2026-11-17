@@ -30,16 +30,17 @@ Protocole, fixé AVANT de regarder les résultats :
    respect de la limite, puis rappel, puis fausses alertes, puis taille). Amendement ajouté après
    la première exécution, qui montrait la fragilité de l'arbre seul sur le profil décalé ; la
    validation désignait déjà la forêt, indépendamment de ce test.
-7. **Vote.** Une forêt décide par **vote majoritaire** (au moins 6 arbres sur 10), comme le code C
-   d'emlearn ; scikit-learn moyenne des probabilités, ce qui donnait 0,74 % de décisions
-   différentes entre Python et l'ESP32. La règle majoritaire sert donc PARTOUT : choix, évaluation
-   et export.
-8. **Export.** Le modèle retenu est converti en C (emlearn, entrées ``float``) ; le C est compilé
-   et exécuté sur les vecteurs de test, et doit décider exactement comme Python.
+7. **Vote.** Une forêt décide par **vote majoritaire** (au moins 6 arbres sur 10) ; scikit-learn
+   moyenne des probabilités, ce qui donnait 0,74 % de décisions différentes avec le code C. La règle
+   majoritaire sert donc PARTOUT : choix, évaluation et export.
+8. **Export.** Le modèle retenu est converti en C pour l'ESP32 et en JSON pour le simulateur
+   (``codegen.py`` : seuils float32 arrondis vers le bas, comparaison ``<=``, donc décisions
+   identiques par construction). Le C est compilé et exécuté sur les vecteurs de test, l'évaluateur
+   Python aussi : tous deux doivent décider exactement comme scikit-learn.
 
 Usage (depuis la racine du dépôt) ::
 
-    python ml/sensor_anomaly/train.py            # entraîne et écrit ml/export/
+    python ml/sensor_anomaly/train.py            # entraîne et livre le modèle (firmware, simulateur, rapport)
     python ml/sensor_anomaly/train.py --check    # intégration continue : refait tout, applique les
                                                  # critères et vérifie que ml/export/ est à jour
 """
@@ -67,7 +68,14 @@ from sensor_anomaly.features import FEATURES, WINDOW, extract  # noqa: E402
 
 EXPORT = REPO / "ml" / "export"
 HEADER = "sensor_anomaly_model.h"
+MODEL_JSON = "sensor_anomaly_model.json"
 REPORT = "sensor_anomaly_report.json"
+#: chaque artefact est livré là où il est consommé
+DESTINATIONS = {
+    HEADER: REPO / "firmware" / "lib" / "floodwatch_core" / "src" / HEADER,       # ESP32
+    MODEL_JSON: REPO / "backend" / "simulator" / "fwsim" / MODEL_JSON,           # stations virtuelles
+    REPORT: EXPORT / REPORT,                                                     # rapport d'évaluation
+}
 HARNESS = REPO / "ml" / "harness" / "check_model.c"
 
 HOURS = 24.0
@@ -86,6 +94,7 @@ GATE = {
     # ordre de grandeur de l'empreinte en flash sur l'ESP32 (4 Mo), pas une mesure exacte.
     "max_text_bytes": 16 * 1024,
     "min_c_agreement": 1.0,             # le C embarqué doit décider exactement comme Python
+    "min_py_agreement": 1.0,            # ... et l'évaluateur Python du simulateur aussi
 }
 
 PHYSICS = {
@@ -157,7 +166,7 @@ def decide(model, X: np.ndarray) -> np.ndarray:
     """Décision exactement comme le code C embarqué (1 = lecture probablement fausse).
 
     Arbre : classe majoritaire de la feuille. Forêt : vote majoritaire STRICT des arbres ; à
-    égalité, emlearn retient la classe 0 (lecture plausible), on fait de même.
+    égalité, la lecture est jugée plausible (classe 0), comme dans le code C généré.
     """
     if hasattr(model, "estimators_"):
         votes = np.sum([est.predict(X) for est in model.estimators_], axis=0)
@@ -223,34 +232,51 @@ def describe(model) -> str:
 
 
 def export_header(model, path: Path) -> None:
-    import emlearn
+    from sensor_anomaly.codegen import to_c
 
-    raw = path.with_suffix(".raw.h")
-    emlearn.convert(model, method="inline", dtype="float").save(file=str(raw), name="sensor_anomaly")
-    body = raw.read_text(encoding="utf-8")
-    raw.unlink()
     defines = "\n".join(f"#define SENSOR_ANOMALY_F_{name.upper()} {i}" for i, name in enumerate(FEATURES))
     banner = f"""/*
  * ============================================================================
  *  Module    : Cloud of Things – FloodWatch (Sup'Com 2026-2027)
  *  Couche    : firmware – classifieur embarqué (TinyML)
- *  Fichier   : ml/export/{HEADER}
- *  FICHIER GÉNÉRÉ par ml/sensor_anomaly/train.py (emlearn) : NE PAS MODIFIER À LA MAIN.
+ *  Fichier   : firmware/lib/floodwatch_core/src/{HEADER}
+ *  FICHIER GÉNÉRÉ par ml/sensor_anomaly/train.py (codegen.py) : NE PAS MODIFIER À LA MAIN.
  * ============================================================================
  *  {describe(model)}, {len(FEATURES)} entrées float.
+ *  Seuils float32 arrondis vers le bas et comparaison « <= » : décisions identiques à celles de
+ *  l'entraînement (scikit-learn) et du simulateur, par construction.
  *  Sortie de sensor_anomaly_predict() : 1 = lecture probablement fausse, 0 = lecture plausible.
  *  Le classifieur ne décide de rien seul : voir l'invariant de sécurité de docs/ml-architecture.md.
- *  Entrées, dans l'ordre des SENSOR_ANOMALY_F_* ci-dessous (calcul : ml/sensor_anomaly/features.py,
- *  fenêtre de {WINDOW} lectures).
+ *  Entrées, dans l'ordre des SENSOR_ANOMALY_F_* ci-dessous (calcul : backend/simulator/fwsim/features.py
+ *  et lib/floodwatch_core/src/fw_core.cpp, fenêtre de {WINDOW} lectures).
  * ============================================================================
  */
 #ifndef SENSOR_ANOMALY_MODEL_H
 #define SENSOR_ANOMALY_MODEL_H
 
+#include <stdint.h>
+
 #define SENSOR_ANOMALY_N_FEATURES {len(FEATURES)}
 {defines}
+
 """
-    path.write_text(banner + body.rstrip() + "\n\n#endif /* SENSOR_ANOMALY_MODEL_H */\n", encoding="utf-8")
+    path.write_text(banner + to_c(model) + "\n#endif /* SENSOR_ANOMALY_MODEL_H */\n", encoding="utf-8")
+
+
+def export_json(model, path: Path) -> None:
+    """Même modèle, format JSON lu par les stations virtuelles (fwsim/anomaly.py)."""
+    from sensor_anomaly.codegen import to_json
+
+    path.write_text(json.dumps(to_json(model, list(FEATURES), describe(model)), separators=(",", ":")) + "\n",
+                    encoding="utf-8")
+
+
+def py_agreement(path: Path, X: np.ndarray, expected: np.ndarray) -> float:
+    from fwsim.anomaly import AnomalyModel
+
+    m = AnomalyModel.load(path)
+    got = np.array([int(m.suspect([float(v) for v in row])) for row in X], dtype=np.int32)
+    return float((got == expected).mean())
 
 
 def c_agreement(header_dir: Path, X: np.ndarray, expected: np.ndarray) -> float:
@@ -300,11 +326,13 @@ def run(out_dir: Path) -> dict:
             exported = (model, Xt)
     model, Xt = exported
     export_header(model, out_dir / HEADER)
+    export_json(model, out_dir / MODEL_JSON)
     e = report["experiments"][EXPORTED]
     sel = e["selected"][e["chosen_family"]]
     sel["header_bytes"] = (out_dir / HEADER).stat().st_size
     sel["text_bytes_x86_Os"] = compiled_text_bytes(out_dir)
     sel["c_agreement"] = c_agreement(out_dir, Xt, decide(model, Xt))
+    sel["py_agreement"] = py_agreement(out_dir / MODEL_JSON, Xt, decide(model, Xt))
     (out_dir / REPORT).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return report
 
@@ -331,6 +359,9 @@ def gate(report: dict) -> list[str]:
         problems.append(f"code compilé de {t['text_bytes_x86_Os']} octets > {GATE['max_text_bytes']}")
     if t["c_agreement"] < GATE["min_c_agreement"]:
         problems.append(f"le modèle C ne décide comme Python que sur {t['c_agreement']:.4%} des lectures")
+    if t.get("py_agreement", 0.0) < GATE["min_py_agreement"]:
+        problems.append(f"le modèle du simulateur ne décide comme scikit-learn que sur "
+                        f"{t.get('py_agreement', 0.0):.4%} des lectures")
     return problems
 
 
@@ -374,8 +405,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="refait tout dans un dossier temporaire, applique les critères et vérifie ml/export/")
     a = p.parse_args(argv)
     if not a.check:
-        EXPORT.mkdir(parents=True, exist_ok=True)
-        report = run(EXPORT)
+        with tempfile.TemporaryDirectory() as tmp:
+            report = run(Path(tmp))
+            for name, dest in DESTINATIONS.items():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(Path(tmp) / name, dest)
         show(report)
         problems = gate(report)
         print("\n" + ("CRITÈRES : modèle accepté" if not problems
@@ -386,10 +420,10 @@ def main(argv: list[str] | None = None) -> int:
         report = run(out)
         show(report)
         problems = gate(report)
-        for name in (HEADER, REPORT):
-            committed = EXPORT / name
+        for name, committed in DESTINATIONS.items():
             if not committed.is_file() or committed.read_bytes() != (out / name).read_bytes():
-                problems.append(f"ml/export/{name} n'est pas à jour : relancer python ml/sensor_anomaly/train.py")
+                problems.append(f"{committed.relative_to(REPO).as_posix()} n'est pas à jour : "
+                                f"relancer python ml/sensor_anomaly/train.py")
     if problems:
         print("\nÉCHEC :\n  - " + "\n  - ".join(problems))
         return 1

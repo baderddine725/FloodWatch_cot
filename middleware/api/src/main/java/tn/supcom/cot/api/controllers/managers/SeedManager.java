@@ -35,6 +35,8 @@ import java.util.logging.Logger;
 @Startup
 public class SeedManager {
     private static final Logger LOG = Logger.getLogger(SeedManager.class.getName());
+    /** Zone des stations de démonstration (= zone de backend/gateway/stations.json). */
+    private static final String DEMO_ZONE = "ariana";
 
     @Inject
     private IdentityRepository identities;
@@ -50,13 +52,27 @@ public class SeedManager {
                     "Opérateur municipal", EnumSet.of(Role.OPERATOR));
             LOG.info("Seeded default admin and operator accounts – change their passwords!");
         }
-        if (AppConfig.getBool("seed.demo.stations", true) && stations.count() == 0) {
-            createStation("underpass-01", "Passage souterrain Ariana", StationType.UNDERPASS, 36.8625, 10.1956,
-                    "Trémie, avenue principale, Ariana", "Passage souterrain sous la voie ferrée (maquette bac n°1).");
-            createStation("wadi-01", "Gué de l'oued Ariana", StationType.WADI, 36.8792, 10.1637,
+        // Stations de démonstration, créées une à une si absentes : une base existante reçoit aussi la
+        // station amont ajoutée avec la topologie hydrologique (backend/gateway/stations.json v1.1).
+        if (AppConfig.getBool("seed.demo.stations", true)) {
+            createStationIfMissing("upstream-01", "Oued Ariana amont", StationType.WADI, 36.9050, 10.1500,
+                    "Lit de l'oued, en amont du gué", "Station amont (démonstration) : annonce la crue au gué et au passage souterrain.");
+            createStationIfMissing("wadi-01", "Gué de l'oued Ariana", StationType.WADI, 36.8792, 10.1637,
                     "Route du gué, Ariana", "Route basse traversant l'oued (maquette bac n°2).");
-            LOG.info("Seeded demo stations underpass-01 and wadi-01");
+            createStationIfMissing("underpass-01", "Passage souterrain Ariana", StationType.UNDERPASS, 36.8625, 10.1956,
+                    "Trémie, avenue principale, Ariana", "Passage souterrain sous la voie ferrée (maquette bac n°1).");
         }
+    }
+
+    private void createStationIfMissing(String code, String name, StationType type, double lat, double lon,
+                                        String address, String description) {
+        var existing = stations.findByCode(code);
+        if (existing.isPresent()) {
+            if (existing.get().getZone() == null) existing.get().setZone(DEMO_ZONE);   // base antérieure à la v2
+            return;
+        }
+        createStation(code, name, type, lat, lon, address, description);
+        LOG.info(() -> "Seeded demo station " + code);
     }
 
     private void createUser(String username, String password, String fullName, EnumSet<Role> roles) {
@@ -79,6 +95,7 @@ public class SeedManager {
         s.setLongitude(lon);
         s.setAddress(address);
         s.setDescription(description);
+        s.setZone(DEMO_ZONE);
         stations.persist(s);
     }
 }

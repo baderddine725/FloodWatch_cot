@@ -29,6 +29,7 @@ from fwsim.config import ConfigError, load_config
 from fwsim.health import start_health_server
 from fwsim.logs import setup_logging
 from fwsim.station import VirtualStation
+from fwsim.topology import couple
 
 log = logging.getLogger("fwsim")
 
@@ -43,6 +44,10 @@ def main(argv=None) -> int:
     setup_logging(cfg.log_format, cfg.verbose)
 
     stations = [VirtualStation(info, cfg, seed=i) for i, info in enumerate(cfg.stations)]
+    links = couple(stations)       # fog : l'eau amont rejoint les stations aval (stations.json)
+    for link in links:
+        log.info("couplage %s -> %s : %.0f s, gain %.2f/min", link.upstream, link.downstream, link.travel_s,
+                 link.gain_per_min, extra={"station": "sim", "event": "coupling"})
     for s in stations:
         s.start()
     if cfg.health_port:

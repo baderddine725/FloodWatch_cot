@@ -98,6 +98,24 @@ public class PredictionHistory {
     }
 
     /**
+     * Enregistre des niveaux prévus par un autre modèle que celui du moteur d'alerte (ex. modèle
+     * réservoir calibré) : les deux sont alors évalués sur les mêmes mesures réelles.
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void recordLevels(UUID stationId, String model, Instant now, double baseLevelCm, int[] horizons,
+                             double[] levels) {
+        var station = predictions.stationRef(stationId);
+        for (int i = 0; i < horizons.length && i < levels.length; i++) {
+            predictions.persist(new PredictionRecord(station, now, horizons[i], model, baseLevelCm, levels[i]));
+        }
+    }
+
+    /** Horizons configurés (secondes). */
+    public int[] horizonsSec() {
+        return horizonsSec.clone();
+    }
+
+    /**
      * Évalue les prédictions arrivées à échéance. On attend {@code tolerance} après l'échéance
      * pour que la mesure la plus proche (avant OU après) soit déjà arrivée.
      *

@@ -5,8 +5,8 @@
  *  Fichier   : firmware/src/main.cpp – station FloodWatch (ESP32)
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Ksontini Amine
- *  Créé le   : 2026-11-02          Modifié le : 2026-11-16
- *  Version   : 1.2
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-17
+ *  Version   : 1.3
  * ============================================================================
  *  Fonctions :
  *   - mesure du niveau d'eau (HC-SR04, médiane de 5 échos) et de la pluie (ADC) ;
@@ -17,9 +17,16 @@
  *   - publication MQTT : telemetry, heartbeat (15 s), state (retenu), status (LWT retenu) ;
  *   - exécution des commandes Cloud (barrière, feu, sirène, période) avec acquittement ;
  *   - seuils reçus du Cloud (topic config retenu) et stockés en flash (NVS) ;
+ *   - v1.3 : toutes les DÉCISIONS sont prises par le cœur portable lib/floodwatch_core (C++ sans
+ *     Arduino, testé sur le poste et identique au simulateur) : indicateurs et classifieur
+ *     embarqué (TinyML, lecture suspecte), règle de sécurité locale et politique de capteur
+ *     dégradé. Ce fichier ne garde que les entrées-sorties (capteurs, Wi-Fi, MQTT, actionneurs) ;
  *   - RÈGLE DE SÉCURITÉ LOCALE : au-delà du seuil rouge, la station ferme elle-même la
  *     barrière, passe le feu au rouge et déclenche la sirène, même sans Wi-Fi ni Cloud.
- *     Réouverture seulement après retour sous le seuil orange pendant la temporisation.
+ *     Réouverture seulement après retour sous le seuil orange pendant la temporisation, sur des
+ *     lectures valides que le classifieur ne juge pas suspectes.
+ *   - CAPTEUR AVEUGLE : feu orange ; aveugle sous la pluie pendant degradedCloseSec (120 s) :
+ *     fermeture de précaution, sans sirène (mode DEGRADED) ;
  *   - verrou de sécurité : une commande d'ouverture est refusée au-dessus du seuil rouge ;
  *   - Thing Description W3C WoT 1.1 publiée (retenue) sur floodwatch/stations/<code>/td
  *     à chaque connexion (gabarit généré et validé par backend/simulator/tools/export_td.py).
@@ -34,32 +41,31 @@
 #include <Preferences.h>
 #include "station_config.h"
 #include "td_template.h"
+#include "fw_core.h"
 
-static const char *FW_VERSION = "1.2.0";
+static const char *FW_VERSION = "1.3.0";
 static const uint32_t HEARTBEAT_MS = 15000;
 
 // ----------------------------------------------------------------------------- configuration (NVS)
 struct Config {
   float criticalCm = 20, yellowPct = 30, orangePct = 60, redPct = 85;
   float rainThreshold = 0.2f, sensorHeightCm = 30;
-  uint32_t reopenDelaySec = 60, periodNormalSec = 30, periodWatchSec = 5;
+  uint32_t reopenDelaySec = 60, periodNormalSec = 30, periodWatchSec = 5, degradedCloseSec = 120;
 } cfg;
 
 // ----------------------------------------------------------------------------- état
-enum class Light { GREEN, ORANGE, RED, OFF };
-struct State {
-  bool barrierClosed = false;
-  Light light = Light::GREEN;
-  bool siren = false;
-  bool cloudWatch = false;        // surveillance renforcée demandée par le Cloud
-  bool localSafety = false;       // fermeture autonome en cours
-} st;
+using fw::Light;
+fw::Outputs out;                // barrière, feu, sirène : écrits par le cœur ou par les commandes
+fw::SafetyController safety;    // règle de sécurité locale + politique de capteur dégradé
+fw::FeatureState features;      // indicateurs du classifieur embarqué
+fw::Burst burst{};              // dernière lecture
+bool cloudWatch = false;        // surveillance renforcée demandée par le Cloud
+bool suspect = false;           // dernière lecture jugée probablement fausse par le classifieur
 
-float levelCm = 0, rain = 0;
+float levelCm = 0, rain = 0;    // levelCm : dernière lecture VALIDE (niveau perçu)
 bool sensorOk = true;
 uint8_t echoOk = 0;        // échos reçus sur la dernière salve (0..5)
 float echoSpreadCm = 0;    // écart max − min entre ces échos (cm)
-uint32_t belowOrangeSinceMs = 0;
 uint32_t lastMeasureMs = 0, lastHeartbeatMs = 0, lastMqttTryMs = 0, lastWifiTryMs = 0;
 uint32_t seq = 0;
 
@@ -74,19 +80,12 @@ PubSubClient mqtt(net);
 String tTelemetry, tHeartbeat, tState, tStatus, tAck, tCmd, tConfig, tTd;
 
 // ----------------------------------------------------------------------------- utilitaires
-const char *lightName(Light l) {
-  switch (l) {
-    case Light::GREEN: return "GREEN";
-    case Light::ORANGE: return "ORANGE";
-    case Light::RED: return "RED";
-    default: return "OFF";
-  }
-}
+const char *lightName(Light l) { return fw::lightName(l); }
 
 float levelPct() { return 100.0f * levelCm / cfg.criticalCm; }
 
 bool watchMode() {
-  return st.cloudWatch || rain >= cfg.rainThreshold || levelPct() >= cfg.yellowPct;
+  return cloudWatch || rain >= cfg.rainThreshold || levelPct() >= cfg.yellowPct;
 }
 
 void loadConfig() {
@@ -100,7 +99,21 @@ void loadConfig() {
   cfg.reopenDelaySec = prefs.getUInt("reo", cfg.reopenDelaySec);
   cfg.periodNormalSec = prefs.getUInt("pn", cfg.periodNormalSec);
   cfg.periodWatchSec = prefs.getUInt("pw", cfg.periodWatchSec);
+  cfg.degradedCloseSec = prefs.getUInt("dgc", cfg.degradedCloseSec);
   prefs.end();
+}
+
+/** Recopie la configuration dans le cœur de décision (après lecture NVS ou topic config). */
+void applyThresholds() {
+  fw::Thresholds t;
+  t.criticalCm = cfg.criticalCm;
+  t.yellowPct = cfg.yellowPct;
+  t.orangePct = cfg.orangePct;
+  t.redPct = cfg.redPct;
+  t.rainThreshold = cfg.rainThreshold;
+  t.reopenDelaySec = cfg.reopenDelaySec;
+  t.degradedCloseSec = cfg.degradedCloseSec;
+  safety.setThresholds(t);
 }
 
 void saveConfig() {
@@ -114,31 +127,33 @@ void saveConfig() {
   prefs.putUInt("reo", cfg.reopenDelaySec);
   prefs.putUInt("pn", cfg.periodNormalSec);
   prefs.putUInt("pw", cfg.periodWatchSec);
+  prefs.putUInt("dgc", cfg.degradedCloseSec);
   prefs.end();
 }
 
 // ----------------------------------------------------------------------------- actionneurs
 void applyOutputs() {
-  barrier.write(st.barrierClosed ? SERVO_CLOSED_DEG : SERVO_OPEN_DEG);
-  digitalWrite(PIN_LED_RED, st.light == Light::RED);
-  digitalWrite(PIN_LED_ORANGE, st.light == Light::ORANGE);
-  digitalWrite(PIN_LED_GREEN, st.light == Light::GREEN);
-  if (!st.siren) digitalWrite(PIN_BUZZER, LOW);
+  barrier.write(out.barrierClosed ? SERVO_CLOSED_DEG : SERVO_OPEN_DEG);
+  digitalWrite(PIN_LED_RED, out.light == Light::RED);
+  digitalWrite(PIN_LED_ORANGE, out.light == Light::ORANGE);
+  digitalWrite(PIN_LED_GREEN, out.light == Light::GREEN);
+  if (!out.siren) digitalWrite(PIN_BUZZER, LOW);
 }
 
 /** Sirène intermittente non bloquante (500 ms). */
 void updateSiren() {
-  if (st.siren) digitalWrite(PIN_BUZZER, (millis() / 500) % 2);
+  if (out.siren) digitalWrite(PIN_BUZZER, (millis() / 500) % 2);
 }
 
 void publishState() {
   if (!mqtt.connected()) return;
   JsonDocument doc;
-  doc["barrier"] = st.barrierClosed ? "CLOSED" : "OPEN";
-  doc["light"] = lightName(st.light);
-  doc["siren"] = st.siren;
+  doc["barrier"] = out.barrierClosed ? "CLOSED" : "OPEN";
+  doc["light"] = lightName(out.light);
+  doc["siren"] = out.siren;
   doc["sampling"] = watchMode() ? "WATCH" : "NORMAL";
-  doc["localSafety"] = st.localSafety;
+  doc["localSafety"] = safety.mode() != fw::Mode::NORMAL;
+  doc["mode"] = fw::modeName(safety.mode());
   char buf[192];
   size_t n = serializeJson(doc, buf);
   mqtt.publish(tState.c_str(), (const uint8_t *)buf, n, true);
@@ -182,43 +197,28 @@ void measure() {
   sensorOk = d > 0 && d <= cfg.sensorHeightCm + 5;
   if (sensorOk) levelCm = max(0.0f, cfg.sensorHeightCm - d);
   rain = readRain();
+  // lecture transmise au cœur : mêmes grandeurs que dans le simulateur et le banc d'essai
+  burst.tS = millis() / 1000.0;
+  burst.ok = sensorOk;
+  burst.levelCm = sensorOk ? (double)max(0.0f, cfg.sensorHeightCm - d) : 0.0;
+  burst.echoOk = echoOk;
+  burst.spreadCm = echoSpreadCm;
+  burst.rain = rain;
+  float x[fw::N_FEATURES];
+  suspect = features.update(burst, x) && fw::isSuspect(x);
 }
 
 // ----------------------------------------------------------------------------- sécurité locale
-/** Règle de sécurité locale (mode dégradé) : ne dépend ni du Wi-Fi ni du Cloud. */
+/** Règle de sécurité locale et politique dégradée (cœur portable) : ni Wi-Fi ni Cloud requis. */
 void localSafetyRule() {
-  if (!sensorOk) return;  // pas de décision sur une mesure invalide
-  float pct = levelPct();
-  bool changed = false;
-  if (pct >= cfg.redPct) {
-    belowOrangeSinceMs = 0;
-    if (!st.barrierClosed || st.light != Light::RED || !st.siren) {
-      st.barrierClosed = true;
-      st.light = Light::RED;
-      st.siren = true;
-      if (!st.localSafety) Serial.printf("[SECURITE] niveau %.0f %% : fermeture autonome\n", pct);
-      st.localSafety = true;
-      changed = true;
-    }
-  } else if (st.localSafety) {
-    if (pct < cfg.orangePct) {
-      if (belowOrangeSinceMs == 0) belowOrangeSinceMs = millis();
-      else if (millis() - belowOrangeSinceMs >= cfg.reopenDelaySec * 1000UL) {
-        st.localSafety = false;
-        st.barrierClosed = false;
-        st.siren = false;
-        st.light = pct < cfg.yellowPct ? Light::GREEN : Light::ORANGE;
-        Serial.println("[SECURITE] retour sous le seuil orange : réouverture");
-        changed = true;
-      }
-    } else {
-      belowOrangeSinceMs = 0;
-    }
-  }
-  if (changed) {
+  fw::Mode before = safety.mode();
+  if (safety.step(burst, suspect, out)) {
     applyOutputs();
     publishState();
   }
+  if (safety.mode() != before)
+    Serial.printf("[SECURITE] %s -> %s (niveau %.0f %%, capteur %s)\n", fw::modeName(before),
+                  fw::modeName(safety.mode()), levelPct(), sensorOk ? "valide" : "aveugle");
 }
 
 // ----------------------------------------------------------------------------- Thing Description
@@ -274,20 +274,20 @@ void handleCommand(JsonDocument &doc) {
     bool close = value == "CLOSE" || value == "CLOSED";
     if (!close && levelPct() >= cfg.redPct) err = "verrouillage securite : niveau au-dessus du seuil rouge";
     else {
-      st.barrierClosed = close;
-      if (!close) st.localSafety = false;
+      out.barrierClosed = close;
+      if (!close) safety.releaseByCommand();
     }
   } else if (actuator == "light") {
-    if (value == "GREEN") st.light = Light::GREEN;
-    else if (value == "ORANGE") st.light = Light::ORANGE;
-    else if (value == "RED") st.light = Light::RED;
-    else if (value == "OFF") st.light = Light::OFF;
+    if (value == "GREEN") out.light = Light::GREEN;
+    else if (value == "ORANGE") out.light = Light::ORANGE;
+    else if (value == "RED") out.light = Light::RED;
+    else if (value == "OFF") out.light = Light::OFF;
     else err = "couleur inconnue";
   } else if (actuator == "siren") {
-    st.siren = value == "ON" || value == "TRUE" || value == "1";
+    out.siren = value == "ON" || value == "TRUE" || value == "1";
   } else if (actuator == "sampling") {
-    if (value == "WATCH") st.cloudWatch = true;
-    else if (value == "NORMAL") st.cloudWatch = false;
+    if (value == "WATCH") cloudWatch = true;
+    else if (value == "NORMAL") cloudWatch = false;
     else err = "mode inconnu";
   } else {
     err = "actionneur inconnu";
@@ -308,7 +308,9 @@ void handleConfig(JsonDocument &doc) {
   cfg.reopenDelaySec = doc["reopenDelaySec"] | cfg.reopenDelaySec;
   cfg.periodNormalSec = doc["periodNormalSec"] | cfg.periodNormalSec;
   cfg.periodWatchSec = doc["periodWatchSec"] | cfg.periodWatchSec;
+  cfg.degradedCloseSec = doc["degradedCloseSec"] | cfg.degradedCloseSec;
   saveConfig();
+  applyThresholds();
   Serial.printf("[CONFIG] critique %.1f cm, rouge %.0f %%\n", cfg.criticalCm, cfg.redPct);
 }
 
@@ -352,6 +354,7 @@ void publishTelemetry() {
   doc["sensorOk"] = sensorOk;
   doc["echoOk"] = echoOk;
   doc["echoSpreadCm"] = roundf(echoSpreadCm * 100) / 100;
+  doc["suspect"] = suspect;
   doc["seq"] = ++seq;
   char buf[224];
   size_t n = serializeJson(doc, buf);
@@ -385,6 +388,7 @@ void setup() {
   barrier.setPeriodHertz(50);
   barrier.attach(PIN_SERVO, 500, 2400);
   loadConfig();
+  applyThresholds();
   applyOutputs();
 
   String base = String("floodwatch/stations/") + STATION_CODE + "/";

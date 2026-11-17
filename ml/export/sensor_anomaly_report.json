@@ -374,9 +374,10 @@
           "nodes": 31,
           "meets_false_alarm_limit": true,
           "depth": 4,
-          "header_bytes": 4695,
-          "text_bytes_x86_Os": 284,
-          "c_agreement": 1.0
+          "header_bytes": 3715,
+          "text_bytes_x86_Os": 171,
+          "c_agreement": 1.0,
+          "py_agreement": 1.0
         },
         "forest": {
           "max_depth": 6,

@@ -30,14 +30,18 @@ import threading
 import time
 
 from . import topics
+from .anomaly import AnomalyModel
 from .config import SimConfig, StationInfo
+from .core import NORMAL, Outputs, SafetyController
+from .features import FeatureState
+from .topology import LevelHistory
 from .mqtt_service import MqttService
 from .sensor import Condition, FaultPlan, Reading, SensorPhysics, UltrasonicSensor, summarize
 from .scenarios import RainScenario, scenario_for
 from .wot import ThingDescriptionFactory
 
 HEARTBEAT_SEC = 15
-FIRMWARE = "sim-1.2.0"
+FIRMWARE = "sim-1.3.0"
 log = logging.getLogger("fwsim.station")
 
 
@@ -55,7 +59,8 @@ class VirtualStation:
         # seuils par défaut (écrasés par le topic config retenu publié par le middleware)
         self.thresholds = {"criticalCm": info.critical_cm, "yellowPct": 30.0, "orangePct": 60.0, "redPct": 85.0,
                            "rainThreshold": 0.2, "reopenDelaySec": 60, "sensorHeightCm": info.sensor_height_cm,
-                           "periodNormalSec": 30, "periodWatchSec": 5, "heartbeatSec": HEARTBEAT_SEC}
+                           "periodNormalSec": 30, "periodWatchSec": 5, "heartbeatSec": HEARTBEAT_SEC,
+                           "degradedCloseSec": 120}
         self.level = 1.5 + self.rng.random()     # niveau RÉEL (vérité terrain du modèle physique)
         # Capteur simulé écho par écho (fwsim/sensor.py). La station ne connaît le niveau qu'à
         # travers lui : « seen_level » est ce qu'elle croit, « level » ce qui est vrai.
@@ -63,11 +68,19 @@ class VirtualStation:
         self.faults = fault_plan or (FaultPlan.random(self.rng) if cfg.faults == "random" else FaultPlan.none())
         self.reading: Reading | None = None
         self.seen_level: float | None = None
+        # Cœur de décision : jumeau Python de firmware/lib/floodwatch_core (même logique, mêmes
+        # entrées) — indicateurs, classifieur embarqué, règle de sécurité et politique dégradée.
+        self.features = FeatureState()
+        self.model = AnomalyModel.load()
+        self.safety = SafetyController(self.thresholds)
+        self.suspect = False
+        # Fog : historique du niveau réel (lu par les stations aval) et apports amont reçus
+        self.history = LevelHistory()
+        self.inflows: list = []        # (historique amont, temps de parcours s, gain 1/min)
         self.rain = 0.0
         self.barrier, self.light, self.siren = "OPEN", "GREEN", False
         self.cloud_sampling = "NORMAL"
         self.local_safety = False
-        self.below_orange_since = None
         self.sim_t = 0.0
         self.last_tel = -1e9
         self.last_hb = -1e9
@@ -148,6 +161,7 @@ class VirtualStation:
             self.barrier = "CLOSED" if value in ("CLOSE", "CLOSED") else "OPEN"
             if self.barrier == "OPEN":
                 self.local_safety = False
+                self.safety.release_by_command()
         elif actuator == "light":
             if value not in ("GREEN", "ORANGE", "RED", "OFF"):
                 return False, "couleur inconnue"
@@ -189,6 +203,10 @@ class VirtualStation:
         self.reading = reading
         if reading.sensor_ok:
             self.seen_level = reading.level_cm
+        # indicateurs et classifieur embarqué (temps physique, comme millis() sur l'ESP32)
+        x = self.features.update(self.sim_t, reading.sensor_ok, reading.level_cm, reading.echo_ok,
+                                 reading.echo_spread_cm, self.rain)
+        self.suspect = bool(x is not None and self.model is not None and self.model.suspect(x))
         return reading
 
     def effective_sampling(self):
@@ -197,54 +215,50 @@ class VirtualStation:
         return "WATCH" if (local_watch or self.cloud_sampling == "WATCH") else "NORMAL"
 
     def local_safety_rule(self, now):
-        """Fermeture autonome au seuil rouge (indépendante du Cloud) et réouverture temporisée.
+        """Règle de sécurité locale et politique de capteur dégradé (jumeau de ``SafetyController``).
+
+        Appliquée à la dernière lecture : valide (ou aucune lecture encore), elle porte sur le niveau
+        perçu ; invalide, elle déclenche la politique dégradée.
 
         :return: vrai si l'état des actionneurs a changé
         """
-        if self.reading is not None and not self.reading.sensor_ok:
-            return False    # comme le firmware : aucune décision sur une lecture invalide
-        changed = False
-        pct = self.pct()
-        th = self.thresholds
-        if pct >= th["redPct"]:
-            self.below_orange_since = None
-            if self.barrier != "CLOSED" or not self.siren or self.light != "RED":
-                self.barrier, self.light, self.siren = "CLOSED", "RED", True
-                if not self.local_safety:
-                    self._log(logging.WARNING, f"SÉCURITÉ LOCALE : niveau {pct:.0f} % -> barrière fermée",
-                              "local_safety", pct=round(pct, 1))
-                self.local_safety = True
-                changed = True
-        elif self.local_safety:
-            if pct < th["orangePct"]:
-                if self.below_orange_since is None:
-                    self.below_orange_since = now
-                elif now - self.below_orange_since >= th["reopenDelaySec"]:
-                    self.local_safety = False
-                    self.barrier, self.siren = "OPEN", False
-                    self.light = "GREEN" if pct < th["yellowPct"] else "ORANGE"
-                    self._log(logging.INFO, "sécurité locale levée : réouverture", "local_safety_end")
-                    changed = True
+        ok = self.reading is None or self.reading.sensor_ok
+        self.safety.thresholds = self.thresholds
+        out = Outputs(self.barrier == "CLOSED", self.light, self.siren)
+        mode_before = self.safety.mode
+        changed = self.safety.step(now, ok, self.believed_level(), self.rain, self.suspect and ok, out)
+        self.barrier = "CLOSED" if out.barrier_closed else "OPEN"
+        self.light, self.siren = out.light, out.siren
+        self.local_safety = self.safety.mode != NORMAL
+        if self.safety.mode != mode_before:
+            if self.safety.mode == "LOCAL_SAFETY":
+                self._log(logging.WARNING, f"SÉCURITÉ LOCALE : niveau {self.pct():.0f} % -> barrière fermée",
+                          "local_safety", pct=round(self.pct(), 1))
+            elif self.safety.mode == "DEGRADED":
+                self._log(logging.WARNING, "CAPTEUR AVEUGLE sous la pluie : fermeture de précaution",
+                          "degraded")
             else:
-                self.below_orange_since = None
+                self._log(logging.INFO, "sécurité locale levée : réouverture", "local_safety_end")
         return changed
 
     # ------------------------------------------------------------------ physique
     def step(self, dt_sim):
-        """Modèle réservoir : dL/dt = a·pluie − b·L (cm/min)."""
+        """Modèle réservoir : dL/dt = a·pluie(t − retard) − b·L + Σ g·L_amont(t − τ) (cm/min)."""
         self.sim_t += dt_sim
-        self.rain = self.scenario.rain(self.sim_t)
+        self.rain = self.scenario.rain(max(0.0, self.sim_t - self.info.rain_lag_s))
         dmin = dt_sim / 60.0
-        self.level += (self.scenario.inflow * self.rain - self.scenario.drain * self.level) * dmin
+        upstream = sum(g * h.at(self.sim_t - travel) for h, travel, g in self.inflows)
+        self.level += (self.scenario.inflow * self.rain - self.scenario.drain * self.level + upstream) * dmin
         self.level = max(0.0, min(self.level, self.thresholds["sensorHeightCm"] - 2))
+        self.history.add(self.sim_t, self.level)
 
     # ------------------------------------------------------------------ boucle
     def tick(self, now):
         """Un pas de la boucle principale (appelé toutes les 250 ms)."""
         if self.dead:
             return
+        safety_changed = False
         with self.lock:
-            safety_changed = self.local_safety_rule(now)
             th = self.thresholds
             period = (th["periodWatchSec"] if self.effective_sampling() == "WATCH" else th["periodNormalSec"])
             period /= self.cfg.speed
@@ -252,12 +266,13 @@ class VirtualStation:
             if now - self.last_tel >= period:
                 self.last_tel = now
                 reading = self.read_sensor()
+                safety_changed = self.local_safety_rule(now)   # toujours, connecté ou non
                 # Mêmes champs que le firmware. La vérité terrain (niveau réel, condition du
                 # capteur) n'est JAMAIS publiée : une station réelle ne la connaît pas.
                 telemetry = {"levelCm": round(reading.level_cm, 2) if reading.sensor_ok else -1,
                              "rain": round(self.rain, 2), "sensorOk": reading.sensor_ok,
                              "echoOk": reading.echo_ok, "echoSpreadCm": round(reading.echo_spread_cm, 2),
-                             "seq": int(now)}
+                             "suspect": self.suspect, "seq": int(now)}
         if safety_changed:
             self.publish_state()
         if telemetry:
@@ -276,11 +291,12 @@ class VirtualStation:
         """État des actionneurs, retenu (lu par le middleware et par l'événement floodAlert de la TD)."""
         with self.lock:
             state = {"barrier": self.barrier, "light": self.light, "siren": self.siren,
-                     "sampling": self.effective_sampling(), "localSafety": self.local_safety}
+                     "sampling": self.effective_sampling(), "localSafety": self.local_safety,
+                     "mode": self.safety.mode}
         self.mqtt.publish(topics.station(self.code, "state"), state, qos=1, retain=True)
 
     def health(self) -> dict:
         """État de santé de la station pour GET /health."""
         return {"connected": self.mqtt.connected, "dead": self.dead, "levelCm": round(self.level, 2),
-                "barrier": self.barrier, "localSafety": self.local_safety,
+                "barrier": self.barrier, "localSafety": self.local_safety, "mode": self.safety.mode,
                 "lastPublishAgoSec": None if self.last_publish is None else round(time.time() - self.last_publish, 1)}
