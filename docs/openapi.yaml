@@ -6,6 +6,7 @@ info:
     API REST de la plateforme FloodWatch (Jakarta EE 11 / WildFly 42) – Sup'Com, module Cloud of Things 2026-2027.
     Authentification : `POST /auth/login` renvoie un jeton JWT à transmettre dans `Authorization: Bearer <jeton>`.
     Rôles : OPERATOR (supervision, commandes), ADMIN (stations, seuils, comptes). Les routes publiques servent le front-office (espace citoyen).
+    Clients d'API : `POST /auth/token` (client credentials) ; jeton à portée et zones, accepté sur `/intelligence/**` et les routes publiques.
     Temps réel : WebSocket `/ws/live` (option `?token=<jwt>` pour recevoir alertes et commandes).
   contact: { name: Équipe FloodWatch, url: "https://github.com/baderddine725/FloodWatch_cot" }
 servers:
@@ -65,6 +66,8 @@ components:
         levelCm: { type: number }
         levelPct: { type: number }
         rain: { type: number, description: intensité normalisée 0..1 }
+        zone: { type: string, example: ariana }
+        stationMode: { type: string, enum: [NORMAL, LOCAL_SAFETY, DEGRADED], description: mode de décision publié par la station }
         slopeCmPerMin: { type: number }
         minutesToOverflow: { type: number, nullable: true }
         riskIndex: { type: integer }
@@ -92,7 +95,44 @@ components:
         latitude: { type: number }
         longitude: { type: number }
         address: { type: string }
+        zone: { type: string }
         thresholds: { $ref: '#/components/schemas/Thresholds' }
+    Horizon:
+      type: object
+      properties:
+        minutes: { type: integer, example: 15 }
+        levelCm: { type: number }
+        levelPct: { type: number }
+        overflowRisk: { type: number, minimum: 0, maximum: 1, description: 'P(niveau >= critique) sous erreur gaussienne ; indice ordonné, non calibré sur des crues réelles' }
+        sigmaCm: { type: number, description: "écart type de l'erreur de prévision à cet horizon" }
+        sigmaBasis: { type: string, enum: [measured, extrapolated, default], description: 'mesuré (historique 7 j), extrapolé en √h, ou prudent par défaut' }
+    Forecast:
+      type: object
+      properties:
+        station: { type: string, example: wadi-01 }
+        zone: { type: string, example: ariana }
+        generatedAt: { type: string, format: date-time }
+        method: { type: string, enum: [reservoir-calibrated, median+linreg-120s], description: 'modèle réservoir calibré par la passerelle, ou régression linéaire de repli' }
+        modelVersion: { type: string }
+        levelCm: { type: number, nullable: true }
+        criticalCm: { type: number }
+        risk: { type: string }
+        horizons: { type: array, items: { $ref: '#/components/schemas/Horizon' } }
+        assumptions: { type: object, additionalProperties: true, description: 'hypothèses de la prévision (pluie constante, apport amont, nature du risque)' }
+        calibration: { type: object, nullable: true, description: 'a, b, g, r2, samples, calibratedAt, used' }
+    ApiClient:
+      type: object
+      properties:
+        clientId: { type: string, example: ariana-mobility }
+        displayName: { type: string }
+        scopes: { type: array, items: { type: string, enum: ['forecast:read'] } }
+        zones: { type: array, items: { type: string }, description: 'zones autorisées ; "*" = toutes' }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    OAuthError:
+      type: object
+      properties:
+        error: { type: string, enum: [invalid_request, invalid_client, unsupported_grant_type, invalid_scope] }
     Measurement:
       type: object
       properties:
@@ -108,7 +148,7 @@ components:
         stationId: { type: string, format: uuid }
         stationCode: { type: string }
         stationName: { type: string }
-        type: { type: string, enum: [LEVEL, OFFLINE, SENSOR_FAULT, LOCAL_SAFETY] }
+        type: { type: string, enum: [LEVEL, OFFLINE, SENSOR_FAULT, LOCAL_SAFETY, PROPAGATION] }
         level: { type: string, enum: [GREEN, YELLOW, ORANGE, RED] }
         message: { type: string }
         raisedAt: { type: string, format: date-time }
@@ -173,6 +213,30 @@ paths:
       responses:
         '200': { description: Jeton, content: { application/json: { schema: { type: object, properties: { token: { type: string }, tokenType: { type: string }, expiresIn: { type: integer }, user: { $ref: '#/components/schemas/User' } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/token:
+    post:
+      tags: [Authentification]
+      summary: "Jeton de client d'API (OAuth 2.0 client credentials, RFC 6749 § 4.4)"
+      description: |
+        Servi par iam.<domaine>. Identifiants en HTTP Basic (`client_id:client_secret`) ou dans le formulaire.
+        Le jeton porte `scope` et `zones`, aucun rôle : il est accepté sur les routes `/intelligence/**`
+        (portée `forecast:read`) et sur les routes publiques, et refusé (403) sur toute route à rôle.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type: { type: string, enum: [client_credentials] }
+                scope: { type: string, description: 'portées demandées, séparées par des espaces (défaut : toutes celles accordées)' }
+                client_id: { type: string }
+                client_secret: { type: string }
+      responses:
+        '200': { description: Jeton, content: { application/json: { schema: { type: object, properties: { access_token: { type: string }, token_type: { type: string, example: Bearer }, expires_in: { type: integer }, scope: { type: string, example: 'forecast:read' } } } } } }
+        '400': { description: Requête ou portée invalide, content: { application/json: { schema: { $ref: '#/components/schemas/OAuthError' } } } }
+        '401': { description: 'Client inconnu, désactivé ou mauvais secret', content: { application/json: { schema: { $ref: '#/components/schemas/OAuthError' } } } }
   /auth/me:
     get:
       tags: [Authentification]
@@ -321,6 +385,50 @@ paths:
         - { name: code, in: path, required: true, schema: { type: string } }
         - { name: hours, in: query, schema: { type: integer, default: 24, minimum: 1, maximum: 2160 } }
       responses: { '200': { description: OK }, '404': { description: Station inconnue } }
+  /clients:
+    get:
+      tags: ["Clients d'API"]
+      security: [{ bearer: [] }]
+      summary: "Liste des clients d'API, sans secret (ADMIN)"
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ApiClient' } } } } } }
+    post:
+      tags: ["Clients d'API"]
+      security: [{ bearer: [] }]
+      summary: "Créer un client d'API (ADMIN) – le secret n'est montré qu'une fois"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, scopes, zones], properties: { name: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$' }, displayName: { type: string }, scopes: { type: array, items: { type: string } }, zones: { type: array, items: { type: string } } } } } } }
+      responses: { '201': { description: 'Créé, avec clientSecret' }, '400': { description: Portée inconnue ou champ manquant }, '409': { description: Identifiant déjà utilisé } }
+  /clients/{name}/enabled:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    put: { tags: ["Clients d'API"], security: [{ bearer: [] }], summary: 'Activer ou désactiver un client (ADMIN)', requestBody: { content: { application/json: { schema: { type: object, properties: { enabled: { type: boolean } } } } } }, responses: { '200': { description: OK } } }
+  /clients/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    delete: { tags: ["Clients d'API"], security: [{ bearer: [] }], summary: 'Supprimer un client (ADMIN)', responses: { '204': { description: Supprimé } } }
+  /intelligence/stations:
+    get:
+      tags: [Intelligence]
+      security: [{ bearer: [] }]
+      summary: Stations visibles du client (zones du jeton) et état de leur calibration
+      description: 'Portée `forecast:read`. Un jeton utilisateur (opérateur, administrateur) voit toutes les zones.'
+      responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { description: Portée manquante } }
+  /intelligence/stations/{code}/forecast:
+    get:
+      tags: [Intelligence]
+      security: [{ bearer: [] }]
+      summary: Prévision multi-horizon du niveau et risque de débordement
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string, example: wadi-01 } }
+        - { name: horizons, in: query, description: 'minutes, séparées par des virgules (1 à 120)', schema: { type: string, default: '5,10,15,30' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Forecast' } } } }
+        '400': { description: Horizons invalides }
+        '404': { description: Station inconnue ou hors des zones du client }
+  /intelligence/zones/{zone}/risk:
+    get:
+      tags: [Intelligence]
+      security: [{ bearer: [] }]
+      summary: Risque de la zone à 30 min par station et pré-alertes de propagation en cours
+      parameters: [{ name: zone, in: path, required: true, schema: { type: string, example: ariana } }]
+      responses: { '200': { description: OK }, '404': { description: Zone inconnue ou non autorisée } }
   /users:
     get: { tags: [Comptes], security: [{ bearer: [] }], summary: Liste des comptes (ADMIN), responses: { '200': { description: OK } } }
     post:

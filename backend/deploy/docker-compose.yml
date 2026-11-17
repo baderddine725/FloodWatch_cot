@@ -195,7 +195,7 @@ services:
       SIM_PASSWORD: ${STATION_PASSWORD:-}
       SIM_RAW: "true"                   # télémétrie brute -> filtrage Node-RED
       SIM_STATIONS: ${SIM_STATIONS:-upstream-01,wadi-01,underpass-01}
-      SIM_SCENARIO: ${SIM_SCENARIO:-storm}
+      SIM_SCENARIO: ${SIM_SCENARIO:-season}
       SIM_FAULTS: ${SIM_FAULTS:-none}     # random : épisodes de défaut du capteur (banc simulé)
       SIM_SPEED: ${SIM_SPEED:-3}
       SIM_OFFLINE_AFTER: ${SIM_OFFLINE_AFTER:-0}

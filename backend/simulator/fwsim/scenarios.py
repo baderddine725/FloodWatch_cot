@@ -4,8 +4,8 @@
 #  Fichier   : backend/simulator/fwsim/scenarios.py
 #  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
 #  Auteur    : Ksontini Amine
-#  Créé le   : 2026-11-02          Modifié le : 2026-11-03
-#  Version   : 1.1
+#  Créé le   : 2026-11-02          Modifié le : 2026-11-17
+#  Version   : 1.2
 # =============================================================================
 """Scénarios de pluie (patron Strategy) : chaque scénario fournit l'intensité de pluie à
 l'instant t, les coefficients du modèle « réservoir » et l'éventuelle panne du capteur.
@@ -74,8 +74,27 @@ class Fault(RainScenario):
         return t > 60
 
 
+class Season(RainScenario):
+    """Saison des pluies : orage, averse violente, bruine, séparés d'éclaircies, en boucle.
+
+    Chaque épisode dure ``period_s`` secondes simulées (15 min) et la séquence est la même pour
+    toutes les stations : ce sont des orages de zone, comme dans le banc du fog. La réponse du
+    site (``inflow``, ``drain``) reste FIXE d'un épisode à l'autre : c'est ce qui permet à la
+    passerelle de la calibrer en continu (avec ``storm``, il ne pleut qu'une fois au démarrage).
+    """
+
+    name = "season"
+    period_s = 900.0
+    SEQUENCE = ("storm", "calm", "flash", "calm", "drizzle", "calm")
+
+    def rain(self, t):
+        index = int(t // self.period_s)
+        episode = SCENARIOS[self.SEQUENCE[index % len(self.SEQUENCE)]]
+        return episode().rain(t - index * self.period_s)
+
+
 #: registre des stratégies disponibles
-SCENARIOS: dict[str, type[RainScenario]] = {cls.name: cls for cls in (Storm, Flash, Drizzle, RainScenario, Fault)}
+SCENARIOS: dict[str, type[RainScenario]] = {cls.name: cls for cls in (Storm, Flash, Drizzle, RainScenario, Fault, Season)}
 
 
 def scenario_for(name: str) -> RainScenario:

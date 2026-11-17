@@ -108,5 +108,14 @@ def test_storm_scenario_reaches_red_then_recedes(cfg, fake_mqtt):
 
 
 def test_scenario_registry_strategy():
-    assert set(SCENARIOS) == {"storm", "flash", "drizzle", "calm", "fault"}
+    assert set(SCENARIOS) == {"storm", "flash", "drizzle", "calm", "fault", "season"}
     assert scenario_for("fault").sensor_fault(120) and not scenario_for("storm").sensor_fault(120)
+
+
+def test_season_repeats_zone_storms_with_a_fixed_site_response():
+    season = scenario_for("season")
+    episode = lambda k: [season.rain(k * 900 + t) for t in range(0, 900, 10)]
+    assert max(episode(0)) == 0.9 and max(episode(2)) == 1.0 and 0 < max(episode(4)) < 0.5
+    assert max(episode(1)) == max(episode(3)) == 0.0, "éclaircies entre les épisodes"
+    assert episode(6) == episode(0), "la saison boucle : il pleut encore après le démarrage"
+    assert (season.inflow, season.drain) == (8.0, 0.3), "réponse du site fixe : calibrable"

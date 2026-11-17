@@ -298,9 +298,11 @@ du cahier des charges.
 mais inutilisée dans le code de départ, devient le client : secret haché (PBKDF2, montré une seule
 fois), portées accordées et zones autorisées. Un administrateur les gère par `/api/clients` ; le
 client obtient un jeton sur **`iam.<domaine>`** (`POST /api/auth/token`, HTTP Basic ou formulaire),
-qui porte `scope` et `zones` mais aucun rôle. **Moindre privilège** : ce jeton n'est accepté que sur
-les ressources annotées `@RequiresScope` dont il détient la portée, et une station hors de ses zones
-répond 404.
+qui porte `scope` et `zones` mais aucun rôle. **Moindre privilège** : ce jeton est refusé (403) sur
+toute ressource à rôle (`/api/kpi`, `/api/clients`, `/api/auth/me`…) ; il n'ouvre que les ressources
+annotées `@RequiresScope` dont il détient la portée, les routes publiques du front-office restant
+publiques. Une station ou une zone hors de ses zones répond 404, et la vérification est fermée par
+défaut : sans jeton vérifié dans la requête, rien n'est visible.
 
 **Prévision** (`GET /api/intelligence/stations/{code}/forecast?horizons=5,10,15,30`) :
 
