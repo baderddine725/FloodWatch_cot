@@ -43,6 +43,12 @@ public class LinearRegressionPredictor implements OverflowPredictor {
         this(Duration.ofMinutes(2), 4, Duration.ofSeconds(15), 0.05);
     }
 
+    /** Le nom porte la fenêtre : changer la fenêtre, c'est changer de modèle. */
+    @Override
+    public String modelId() {
+        return "linreg-" + window.toSeconds() + "s";
+    }
+
     @Override
     public Prediction predict(List<Sample> samples, double criticalCm) {
         if (samples.isEmpty()) return Prediction.none(0, null);

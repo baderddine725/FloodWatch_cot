@@ -519,7 +519,7 @@
     "wadi"
   ],
   "model": "FloodWatch ESP32",
-  "firmwareVersion": "1.1.0",
+  "firmwareVersion": "1.2.0",
   "fw:stationCode": "wadi-01",
   "fw:stationType": "WADI",
   "fw:zone": "ariana"

@@ -519,7 +519,7 @@
     "underpass"
   ],
   "model": "FloodWatch ESP32",
-  "firmwareVersion": "1.1.0",
+  "firmwareVersion": "1.2.0",
   "fw:stationCode": "underpass-01",
   "fw:stationType": "UNDERPASS",
   "fw:zone": "ariana"

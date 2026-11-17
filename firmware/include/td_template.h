@@ -9,7 +9,7 @@
  *  Version   : 1.0
  * ============================================================================
  *  Gabarits de Thing Description W3C WoT 1.1, un par type de station, générés par
- *  simulator/tools/export_td.py depuis la fabrique Python validée par les tests.
+ *  backend/simulator/tools/export_td.py depuis la fabrique Python validée par les tests.
  *  Marqueurs remplacés au démarrage : {{CODE}} {{TITLE}} {{ZONE}} {{BROKER}} {{LAT}} {{LON}} {{FW}}
  */
 #pragma once

@@ -10,11 +10,11 @@ déploiement expose quatre noms DNS d'un même domaine : `www.`, `admin.`, `api.
 l'en-tête `Host`, qui est la clé du routage.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/baderddine725/FloodWatch_cot/main/deploy/scripts/install-vm.sh \
+curl -fsSL https://raw.githubusercontent.com/baderddine725/FloodWatch_cot/main/backend/deploy/scripts/install-vm.sh \
   | bash -s -- https://github.com/baderddine725/FloodWatch_cot.git floodwatch.example.tn
 ```
 
-Le script installe Docker, clone le dépôt et génère `deploy/.env` (secrets aléatoires, `BASE_DOMAIN`,
+Le script installe Docker, clone le dépôt et génère `backend/deploy/.env` (secrets aléatoires, `BASE_DOMAIN`,
 `PUBLIC_IP`) ainsi que les certificats (SAN joker `*.<domaine>`). Il lance ensuite
 `docker compose up -d --build`.
 
@@ -24,7 +24,7 @@ Le script installe Docker, clone le dépôt et génère `deploy/.env` (secrets a
 
 ### Résolution du domaine local
 
-Le service `dns` (CoreDNS, `deploy/coredns/Corefile`) fait pointer **tout** nom du domaine vers
+Le service `dns` (CoreDNS, `backend/deploy/coredns/Corefile`) fait pointer **tout** nom du domaine vers
 `PUBLIC_IP` et transmet le reste aux résolveurs publics. Trois façons de l'utiliser :
 
 1. **Résolveur du poste client** → l'adresse de la VM. Sous Ubuntu, le port 53 est déjà occupé par
@@ -40,14 +40,14 @@ Le service `dns` (CoreDNS, `deploy/coredns/Corefile`) fait pointer **tout** nom 
    ```
 3. **DNS de l'infrastructure** : créer un enregistrement joker `*.<domaine>` vers la VM.
 
-Mise à jour (déploiement exclusivement depuis GitHub) : `deploy/scripts/update.sh` (`git pull` + reconstruction).
+Mise à jour (déploiement exclusivement depuis GitHub) : `backend/deploy/scripts/update.sh` (`git pull` + reconstruction).
 
 ### Certificat reconnu par les smartphones (recommandé)
 
 Les PWA (installation, Service Worker, Web Push) exigent un HTTPS de confiance.
 
 ```bash
-cd deploy && mkdir -p certbot
+cd backend/deploy && mkdir -p certbot
 docker run --rm -v "$PWD/certbot:/var/www/certbot" -v "$PWD/letsencrypt:/etc/letsencrypt" certbot/certbot \
   certonly --webroot -w /var/www/certbot -d floodwatch.example.tn --agree-tos -m vous@exemple.tn -n
 cp letsencrypt/live/floodwatch.example.tn/fullchain.pem certs/server.crt
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Host: admin.floodwatch.local" http:
 ## 2. Passerelle Raspberry Pi
 
 ```bash
-git clone https://github.com/baderddine725/FloodWatch_cot.git && cd FloodWatch_cot/gateway
+git clone https://github.com/baderddine725/FloodWatch_cot.git && cd FloodWatch_cot/backend/gateway
 sudo ./install-gateway.sh mqtt.floodwatch.example.tn gw-ariana-01 <MQTT_GATEWAY_PASSWORD> ../deploy/certs/ca.crt
 sudo mosquitto_passwd /etc/mosquitto/floodwatch.passwd underpass-01   # un compte par station
 sudo systemctl restart mosquitto

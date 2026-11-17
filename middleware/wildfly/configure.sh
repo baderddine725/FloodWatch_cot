@@ -21,7 +21,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 # Les .properties sont versionnés pour floodwatch.local : on les réécrit si le
-# domaine de déploiement est différent (variable BASE_DOMAIN de deploy/.env).
+# domaine de déploiement est différent (variable BASE_DOMAIN de backend/deploy/.env).
 # Deux formes à remplacer : le domaine lui-même, et sa variante « prête pour une
 # regex » (points entre crochets) utilisée par le prédicat CORS.
 DOMAIN_RE=$(printf '%s' "$BASE_DOMAIN" | sed 's/\./[.]/g')

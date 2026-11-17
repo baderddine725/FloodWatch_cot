@@ -1,0 +1,10 @@
+# FloodWatch – apprentissage automatique – dépendances (Guesmi Baderddine, v1.0, 2026-11-17)
+# Versions FIGÉES : un même jeu de données et une même graine doivent redonner exactement le
+# même modèle (le contrôle d'intégration continue compare le modèle exporté au modèle versionné).
+-r ../backend/simulator/requirements.txt
+numpy==2.5.5
+scikit-learn==1.9.1
+emlearn==0.23.2
+# emlearn 0.23 importe encore « distutils », retiré de Python 3.12 : setuptools en fournit l'équivalent
+setuptools==84.2.1
+pytest==9.2.0

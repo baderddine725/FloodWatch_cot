@@ -17,10 +17,10 @@ Node-RED), broker Cloud (TLS 1.3, comptes, ACL) et bibliothèque de prédiction.
 | Dossier | Contenu |
 |---|---|
 | [`firmware/`](firmware/) | ESP32 (PlatformIO / Arduino) : HC-SR04, pluie, servo barrière, LED feu, buzzer, LWT, règle de sécurité locale, **Thing Description** publiée |
-| [`simulator/`](simulator/) | stations virtuelles (Python, paquet `fwsim` en couches), TD W3C WoT, 64 tests pytest |
-| [`gateway/`](gateway/) | Mosquitto local (comptes + ACL par station), flux Node-RED, registre `stations.json`, installation Raspberry Pi |
-| [`deploy/mosquitto/`](deploy/mosquitto/) | broker Cloud : TLS 1.3, ACL au moindre privilège, **un compte par passerelle** limité à ses stations, compte observateur |
-| [`deploy/docker-compose.yml`](deploy/docker-compose.yml) | services `mosquitto-local`, `node-red`, `simulator` (profil `iot`), `acl-test` (profil `test`), `firmware` (profil `tools`) |
+| [`backend/simulator/`](backend/simulator/) | stations virtuelles (Python, paquet `fwsim` en couches), TD W3C WoT, 64 tests pytest |
+| [`backend/gateway/`](backend/gateway/) | Mosquitto local (comptes + ACL par station), flux Node-RED, registre `stations.json`, installation Raspberry Pi |
+| [`backend/deploy/mosquitto/`](backend/deploy/mosquitto/) | broker Cloud : TLS 1.3, ACL au moindre privilège, **un compte par passerelle** limité à ses stations, compte observateur |
+| [`backend/deploy/docker-compose.yml`](backend/deploy/docker-compose.yml) | services `mosquitto-local`, `node-red`, `simulator` (profil `iot`), `acl-test` (profil `test`), `firmware` (profil `tools`) |
 | [`prediction/`](prediction/) | bibliothèque Java 21 autonome : régression linéaire, temps avant débordement, 38 tests JUnit |
 | [`docs/wot/`](docs/wot/) | Thing Descriptions générées des stations de démonstration |
 
@@ -80,14 +80,14 @@ Chaque station publie sa TD (format TD 1.1 du cours), **retenue**, sur `floodwat
 | événement `floodAlert` | `…/state` quand `localSafety = true` (fermeture autonome) |
 | événement `offline` | `…/status` (LWT retenu `online` / `offline`) |
 
-- Source unique : la fabrique [`fwsim/wot.py`](simulator/fwsim/wot.py) (patron Factory).
-  [`tools/export_td.py`](simulator/tools/export_td.py) en génère le gabarit embarqué dans l'ESP32
+- Source unique : la fabrique [`fwsim/wot.py`](backend/simulator/fwsim/wot.py) (patron Factory).
+  [`tools/export_td.py`](backend/simulator/tools/export_td.py) en génère le gabarit embarqué dans l'ESP32
   ([`td_template.h`](firmware/include/td_template.h)) et les exemples [`docs/wot/`](docs/wot/).
 - Validation : `validate_thing_description()` renvoie `{"valid", "errors"}` comme `validateThingDescription`
   du cours. Elle reprend ses 4 contrôles de base, auxquels s'ajoutent les contraintes du modèle
   `things.model.mjs` (`id` URN, énumérations `op`, types JSON Schema, schémas de sécurité, `location`
   GeoJSON), les règles MQTT et le contrat FloodWatch.
-  Tests : [`tests/test_wot.py`](simulator/tests/test_wot.py) (chaque type, gabarit du firmware rempli,
+  Tests : [`tests/test_wot.py`](backend/simulator/tests/test_wot.py) (chaque type, gabarit du firmware rempli,
   18 cas invalides, exemple du cours, fichiers générés à jour).
 - Le middleware expose aussi une TD (REST, `GET /api/stations/{id}/td`) avec le même `id`
   (`urn:floodwatch:station:{code}`) : celle de la station décrit l'accès MQTT direct, celle de l'API l'accès REST.
@@ -95,8 +95,8 @@ Chaque station publie sa TD (format TD 1.1 du cours), **retenue**, sur `floodwat
 ## Démarrage (Windows 11, PowerShell, Docker Desktop)
 
 ```powershell
-cd deploy
-Copy-Item .env.example .env        # puis remplacer TOUS les change-me (ou deploy/scripts/install-vm.sh sur la VM)
+cd backend/deploy
+Copy-Item .env.example .env        # puis remplacer TOUS les change-me (ou backend/deploy/scripts/install-vm.sh sur la VM)
 # certificats TLS (AC privée + serveur, SAN localhost et mosquitto) – script bash exécuté dans un conteneur :
 docker run --rm -v "${PWD}:/deploy" -w /deploy alpine:3.20 sh -c "apk add -q bash openssl && bash scripts/gen-certs.sh localhost"
 docker compose --profile iot up -d --build     # middleware + broker Cloud + passerelle + 2 stations simulées
@@ -108,7 +108,7 @@ docker compose ps                              # node-red, simulator : (healthy)
 | Node-RED (éditeur) | <http://localhost:1880> – `admin` / `NODE_RED_ADMIN_PASSWORD` |
 | Santé passerelle | <http://localhost:1880/health> → `UP`, `DEGRADED` (Cloud coupé) ou `DOWN` |
 | Broker local | `localhost:1883` – compte `diag` (lecture seule) pour MQTT Explorer |
-| Broker Cloud | `localhost:8883` TLS 1.3, AC `deploy/certs/ca.crt` – compte `observer` (lecture seule) |
+| Broker Cloud | `localhost:8883` TLS 1.3, AC `backend/deploy/certs/ca.crt` – compte `observer` (lecture seule) |
 | PWA / API | <https://localhost/>, <https://localhost/api/health> (middleware) |
 
 `docker compose up` sans profil démarre exactement les services du middleware, comme avant.
@@ -118,10 +118,10 @@ docker compose ps                              # node-red, simulator : (healthy)
 | Quoi | Commande | Résultat |
 |---|---|---|
 | Prédiction (JUnit 5) | `cd prediction; .\mvnw.cmd verify` | 38 tests |
-| Simulateur + TD (pytest) | `cd simulator; py -m venv .venv; .venv\Scripts\pip install -r requirements-dev.txt; .venv\Scripts\python -m pytest` | 64 tests |
-| Comptes, ACL, TLS 1.3 | `cd deploy; docker compose --profile test run --rm --build acl-test` | 32 cas (local, Cloud, compte dédié de la passerelle), dont refus d'une poignée de main TLS 1.2 (openssl) |
-| Firmware ESP32 | `cd deploy; docker compose --profile tools run --rm firmware` | compilation PlatformIO |
-| Fonctions du flux Node-RED | `node --test gateway/node-red/test/flows.test.mjs` | 11 tests (filtrage, aberrations, règle 85 %, file d'attente, chien de garde, santé) |
+| Simulateur + TD (pytest) | `cd backend/simulator; py -m venv .venv; .venv\Scripts\pip install -r requirements-dev.txt; .venv\Scripts\python -m pytest` | 64 tests |
+| Comptes, ACL, TLS 1.3 | `cd backend/deploy; docker compose --profile test run --rm --build acl-test` | 32 cas (local, Cloud, compte dédié de la passerelle), dont refus d'une poignée de main TLS 1.2 (openssl) |
+| Firmware ESP32 | `cd backend/deploy; docker compose --profile tools run --rm firmware` | compilation PlatformIO |
+| Fonctions du flux Node-RED | `node --test backend/gateway/node-red/test/flows.test.mjs` | 11 tests (filtrage, aberrations, règle 85 %, file d'attente, chien de garde, santé) |
 | Vraie carte ESP32 | procédure en 12 étapes de [`firmware/README.md`](firmware/README.md) | à cocher sur le matériel |
 
 **Intégration continue** : [`.github/workflows/backend-iot.yml`](.github/workflows/backend-iot.yml) lance
@@ -161,12 +161,12 @@ j'en ai repris :
 
 | Élément du cours | Application dans ma partie |
 |---|---|
-| `things/models/things.model.mjs` : modèle Thing TD 1.1 (`@context`, `id` URN, `@type`, `securityDefinitions`, `forms` avec `mqv:topic` / `mqv:controlPacket` / `mqv:qos` / `mqv:retain`, `location` GeoJSON) | fabrique de TD [`fwsim/wot.py`](simulator/fwsim/wot.py) : mêmes champs, une TD par type de station, `@type` `Thing`/`Sensor`/`Actuator`, `location` `[lon, lat]` |
+| `things/models/things.model.mjs` : modèle Thing TD 1.1 (`@context`, `id` URN, `@type`, `securityDefinitions`, `forms` avec `mqv:topic` / `mqv:controlPacket` / `mqv:qos` / `mqv:retain`, `location` GeoJSON) | fabrique de TD [`fwsim/wot.py`](backend/simulator/fwsim/wot.py) : mêmes champs, une TD par type de station, `@type` `Thing`/`Sensor`/`Actuator`, `location` `[lon, lat]` |
 | `docs/README.md` : exemple MQTT (`href` = `mqtt://hôte:port/topic`, `op` `subscribeevent`) | même forme de `href` ; l'exemple du cours est un cas de test du validateur |
 | `wot.service.mjs` : `validateThingDescription` → `{valid, errors}` | `validate_thing_description()` : même résultat et mêmes contrôles de base, étendus |
-| `mqtt.service.mjs` : `subscribe(motif, callback, qos, nl)`, `unsubscribe`, `publish(topic, payload, qos, retain)`, répartiteur par règles | [`fwsim/mqtt_service.py`](simulator/fwsim/mqtt_service.py) : même API en Python, MQTT v5 pour `nl`, table de règles par motif |
-| `main/config/env.config.mjs` + bonne pratique n° 1 (zod) : configuration centralisée validée au démarrage | [`fwsim/config.py`](simulator/fwsim/config.py), [`settings.js`](gateway/node-red/settings.js), [`docker-entrypoint.sh`](gateway/mosquitto/docker-entrypoint.sh) : toutes les erreurs listées, arrêt immédiat |
-| bonne pratique n° 7 : secrets en variables d'environnement, TLS 1.3 uniquement | mots de passe MQTT / Node-RED uniquement dans `deploy/.env` (ignoré par git), `tls_version tlsv1.3` sur le broker Cloud |
+| `mqtt.service.mjs` : `subscribe(motif, callback, qos, nl)`, `unsubscribe`, `publish(topic, payload, qos, retain)`, répartiteur par règles | [`fwsim/mqtt_service.py`](backend/simulator/fwsim/mqtt_service.py) : même API en Python, MQTT v5 pour `nl`, table de règles par motif |
+| `main/config/env.config.mjs` + bonne pratique n° 1 (zod) : configuration centralisée validée au démarrage | [`fwsim/config.py`](backend/simulator/fwsim/config.py), [`settings.js`](backend/gateway/node-red/settings.js), [`docker-entrypoint.sh`](backend/gateway/mosquitto/docker-entrypoint.sh) : toutes les erreurs listées, arrêt immédiat |
+| bonne pratique n° 7 : secrets en variables d'environnement, TLS 1.3 uniquement | mots de passe MQTT / Node-RED uniquement dans `backend/deploy/.env` (ignoré par git), `tls_version tlsv1.3` sur le broker Cloud |
 | n° 2 et 3 : modules et couches | simulateur : `config` → `mqtt_service` (infrastructure) → `station` (service) → `wot` / `scenarios` (modèle) ; passerelle : flux Node-RED en 6 blocs |
 | n° 4 : tests avant commit (TDD, XP) | 38 JUnit + 64 pytest + 11 tests Node-RED + 32 cas ACL, exécutés avant chaque commit |
 | n° 5 : patrons | **Strategy** (scénarios de pluie, `OverflowPredictor` côté middleware), **Factory** (TD par type, client MQTT), **Observer** (`on("connect")`, nœud Statut Node-RED), **Retry** (reconnexion exponentielle 1 → 30 s, file d'attente store-and-forward) |
@@ -174,12 +174,12 @@ j'en ai repris :
 | n° 10 : contrôle de santé | `GET /health` (Node-RED, simulateur) + `HEALTHCHECK` Docker |
 
 Aucune clé ni aucun certificat du cours (`jwt-key`, `*.pem`, `dhparam.pem`) n'a été copié. Nos certificats
-sont générés localement dans `deploy/certs/` (ignoré par git).
+sont générés localement dans `backend/deploy/certs/` (ignoré par git).
 
 ## Un compte Cloud par passerelle
 
 Chaque passerelle se connecte au broker Cloud avec **son propre compte** (`GATEWAY_ID`, ex. `gw-ariana-01`).
-Au démarrage, [`entrypoint.sh`](deploy/mosquitto/entrypoint.sh) génère ce compte et sa section d'ACL à partir
+Au démarrage, [`entrypoint.sh`](backend/deploy/mosquitto/entrypoint.sh) génère ce compte et sa section d'ACL à partir
 de `GATEWAY_ACCOUNTS` (`id|mot de passe|stations`) :
 
 - elle publie les messages montants **de ses stations seulement** et ne lit que **leurs** `cmd` / `config` ;
@@ -188,7 +188,7 @@ de `GATEWAY_ACCOUNTS` (`id|mot de passe|stations`) :
 
 Une passerelle compromise ne peut donc ni fausser les mesures d'une autre zone, ni commander ses barrières.
 
-| Variable (`deploy/.env`) | Rôle |
+| Variable (`backend/deploy/.env`) | Rôle |
 |---|---|
 | `GATEWAY_ID`, `GATEWAY_CLOUD_PASSWORD`, `STATION_CODES` | compte de la passerelle Docker (Node-RED) |
 | `GATEWAY_ACCOUNTS_EXTRA` | passerelles Raspberry Pi réelles : `"gw-tunis-01\|motdepasse\|tunnel-01;..."` |

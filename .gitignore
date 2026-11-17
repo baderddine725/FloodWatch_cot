@@ -1,8 +1,8 @@
 # FloodWatch
-deploy/.env
-deploy/certs/
-deploy/letsencrypt/
-deploy/certbot/
+backend/deploy/.env
+backend/deploy/certs/
+backend/deploy/letsencrypt/
+backend/deploy/certbot/
 firmware/.pio/
 firmware/include/station_config.h
 **/target/
@@ -14,3 +14,6 @@ __pycache__/
 
 # Maquette Figma Make (référence locale, non déployée)
 figma_ai_demo/
+
+# Jeux de lectures du banc simulé : régénérables (backend/simulator/tools/sensor_bench.py)
+ml/datasets/

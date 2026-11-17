@@ -5,11 +5,15 @@
  *  Fichier   : firmware/src/main.cpp – station FloodWatch (ESP32)
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Ksontini Amine
- *  Créé le   : 2026-11-02          Modifié le : 2026-11-03
- *  Version   : 1.1
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-16
+ *  Version   : 1.2
  * ============================================================================
  *  Fonctions :
  *   - mesure du niveau d'eau (HC-SR04, médiane de 5 échos) et de la pluie (ADC) ;
+ *   - diagnostic du capteur publié avec chaque mesure (v1.2) : nombre d'échos reçus sur la
+ *     salve (echoOk) et dispersion max − min (echoSpreadCm). Ces deux valeurs décrivent la
+ *     QUALITÉ de la lecture, que la médiane seule efface ; elles alimentent l'historique de
+ *     santé du capteur côté Cloud et serviront d'entrées au classifieur embarqué ;
  *   - publication MQTT : telemetry, heartbeat (15 s), state (retenu), status (LWT retenu) ;
  *   - exécution des commandes Cloud (barrière, feu, sirène, période) avec acquittement ;
  *   - seuils reçus du Cloud (topic config retenu) et stockés en flash (NVS) ;
@@ -18,7 +22,7 @@
  *     Réouverture seulement après retour sous le seuil orange pendant la temporisation.
  *   - verrou de sécurité : une commande d'ouverture est refusée au-dessus du seuil rouge ;
  *   - Thing Description W3C WoT 1.1 publiée (retenue) sur floodwatch/stations/<code>/td
- *     à chaque connexion (gabarit généré et validé par simulator/tools/export_td.py).
+ *     à chaque connexion (gabarit généré et validé par backend/simulator/tools/export_td.py).
  * ============================================================================
  */
 #include <Arduino.h>
@@ -31,7 +35,7 @@
 #include "station_config.h"
 #include "td_template.h"
 
-static const char *FW_VERSION = "1.1.0";
+static const char *FW_VERSION = "1.2.0";
 static const uint32_t HEARTBEAT_MS = 15000;
 
 // ----------------------------------------------------------------------------- configuration (NVS)
@@ -53,6 +57,8 @@ struct State {
 
 float levelCm = 0, rain = 0;
 bool sensorOk = true;
+uint8_t echoOk = 0;        // échos reçus sur la dernière salve (0..5)
+float echoSpreadCm = 0;    // écart max − min entre ces échos (cm)
 uint32_t belowOrangeSinceMs = 0;
 uint32_t lastMeasureMs = 0, lastHeartbeatMs = 0, lastMqttTryMs = 0, lastWifiTryMs = 0;
 uint32_t seq = 0;
@@ -139,7 +145,11 @@ void publishState() {
 }
 
 // ----------------------------------------------------------------------------- capteurs
-/** Distance HC-SR04 (cm), médiane de 5 mesures ; -1 si aucun écho. */
+/**
+ * Distance HC-SR04 (cm), médiane de 5 mesures ; -1 s'il revient moins de 3 échos.
+ * Renseigne aussi le diagnostic de la salve (echoOk, echoSpreadCm), y compris quand la
+ * lecture est rejetée : c'est justement là qu'il est le plus instructif.
+ */
 float readDistanceCm() {
   float v[5];
   int ok = 0;
@@ -153,9 +163,11 @@ float readDistanceCm() {
     if (us > 0) v[ok++] = us * 0.0343f / 2.0f;
     delay(30);
   }
-  if (ok < 3) return -1;
   for (int i = 1; i < ok; i++)  // tri par insertion
     for (int j = i; j > 0 && v[j - 1] > v[j]; j--) { float t = v[j]; v[j] = v[j - 1]; v[j - 1] = t; }
+  echoOk = (uint8_t)ok;
+  echoSpreadCm = ok >= 2 ? v[ok - 1] - v[0] : 0;
+  if (ok < 3) return -1;
   return v[ok / 2];
 }
 
@@ -338,8 +350,10 @@ void publishTelemetry() {
   else doc["levelCm"] = -1;
   doc["rain"] = roundf(rain * 100) / 100;
   doc["sensorOk"] = sensorOk;
+  doc["echoOk"] = echoOk;
+  doc["echoSpreadCm"] = roundf(echoSpreadCm * 100) / 100;
   doc["seq"] = ++seq;
-  char buf[160];
+  char buf[224];
   size_t n = serializeJson(doc, buf);
   String topic = USE_GATEWAY_RAW ? String("fw/raw/") + STATION_CODE + "/telemetry" : tTelemetry;
   mqtt.publish(topic.c_str(), (const uint8_t *)buf, n, false);

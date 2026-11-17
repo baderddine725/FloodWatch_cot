@@ -38,6 +38,11 @@ public class AlertEngine {
         this.chain = head;
     }
 
+    /** @return l'identifiant du modèle de prédiction en service (voir {@link OverflowPredictor#modelId()}) */
+    public String modelId() {
+        return predictor.modelId();
+    }
+
     /**
      * Résultat complet d'une évaluation.
      *

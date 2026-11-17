@@ -18,6 +18,8 @@ import jakarta.transaction.Transactional;
 import tn.supcom.cot.api.controllers.repositories.AlertRepository;
 import tn.supcom.cot.api.controllers.repositories.CommandRepository;
 import tn.supcom.cot.api.controllers.repositories.MeasurementRepository;
+import tn.supcom.cot.api.controllers.repositories.PredictionRepository;
+import tn.supcom.cot.api.controllers.repositories.SensorDiagnosticRepository;
 import tn.supcom.cot.api.controllers.repositories.StationRepository;
 import tn.supcom.cot.api.dto.LiveMessage;
 import tn.supcom.cot.api.dto.StationDto;
@@ -44,6 +46,10 @@ public class StationManager {
     private AlertRepository alerts;
     @Inject
     private CommandRepository commands;
+    @Inject
+    private PredictionRepository predictions;
+    @Inject
+    private SensorDiagnosticRepository diagnostics;
     @Inject
     private CommandManager commandManager;
     @Inject
@@ -86,6 +92,8 @@ public class StationManager {
         measurements.deleteByStation(s);
         alerts.deleteByStation(s);
         commands.deleteByStation(s);
+        predictions.deleteByStation(s);
+        diagnostics.deleteByStation(s);
         stations.delete(s);
         live.fire(new LiveMessage("stationDeleted", Map.of("code", s.getCode()), false));
     }

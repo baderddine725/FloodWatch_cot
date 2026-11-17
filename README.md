@@ -51,17 +51,17 @@ flowchart LR
 |---|---|---|
 | `middleware/` | Middleware Jakarta EE 11 (Maven : `core`, `iam`, `api`) → `api-1.0.war`, Dockerfile WildFly 42 et configuration Undertow (`wildfly/`) | Baderddine (middleware), Amine (persistance, REST, IAM) |
 | `firmware/` | Firmware ESP32 (PlatformIO) avec règle de sécurité locale | Amine |
-| `gateway/` | Mosquitto local + pont TLS, flux Node-RED, script d'installation Raspberry Pi | Amine |
-| `simulator/` | Simulateur Python de stations (démos sans matériel) | Amine |
+| `backend/gateway/` | Mosquitto local + pont TLS, flux Node-RED, script d'installation Raspberry Pi | Amine |
+| `backend/simulator/` | Simulateur Python de stations (démos sans matériel) | Amine |
 | `frontend/` | `frontoffice/` (espace citoyen), `backoffice/` (espace pilotage), `shared/` (code commun aux deux) + mode démonstration hors serveur | Ahmed |
-| `deploy/` | `docker-compose.yml`, Nginx (TLS), CoreDNS (domaine local), Mosquitto Cloud, certificats, scripts VM | Amine |
-| `postman/` | Collection de tests REST (30 requêtes, 46 assertions) + environnements | Amine |
-| `docs/` | Architecture, topics MQTT, OpenAPI, déploiement, manuels, corrections du code de départ | tous |
+| `backend/deploy/` | `docker-compose.yml`, Nginx (TLS), CoreDNS (domaine local), Mosquitto Cloud, certificats, scripts VM | Amine |
+| `backend/postman/` | Collection de tests REST (30 requêtes, 46 assertions) + environnements | Amine |
+| `docs/` | Architecture, intelligence distribuée (`ml-architecture.md`), topics MQTT, OpenAPI, déploiement, manuels, corrections du code de départ | tous |
 
 ## Démarrage rapide (VM ou poste avec Docker)
 
 ```bash
-git clone https://github.com/baderddine725/FloodWatch_cot.git && cd FloodWatch_cot/deploy
+git clone https://github.com/baderddine725/FloodWatch_cot.git && cd FloodWatch_cot/backend/deploy
 cp .env.example .env               # puis changer TOUS les secrets
 ./scripts/gen-certs.sh floodwatch.local 127.0.0.1    # ou le domaine et l'IP de la VM
 docker compose up -d --build
@@ -85,8 +85,8 @@ Quatre noms DNS, un seul serveur d'applications : WildFly sert les deux front-en
 Pour simuler deux stations, sans matériel :
 
 ```bash
-pip install -r simulator/requirements.txt
-python3 simulator/floodwatch_sim.py --host localhost --port 8883 --tls --cafile deploy/certs/ca.crt \
+pip install -r backend/simulator/requirements.txt
+python3 backend/simulator/floodwatch_sim.py --host localhost --port 8883 --tls --cafile backend/deploy/certs/ca.crt \
         --username gateway --password <MQTT_GATEWAY_PASSWORD> --scenario storm --speed 3 -v
 ```
 
@@ -134,7 +134,7 @@ Decorator (filtre médian du prédicteur), Repository, DTO, Singleton (client MQ
 ## Tests
 
 - `cd middleware && mvn test` : tests unitaires (moteur d'alerte, prédiction, hystérésis, UUIDv7, JWT, PBKDF2).
-- `newman run postman/FloodWatch.postman_collection.json -e postman/local.postman_environment.json`
+- `newman run backend/postman/FloodWatch.postman_collection.json -e backend/postman/local.postman_environment.json`
 - Tests de bout en bout réalisés pendant le développement : simulateur → pont TLS → WildFly → PostgreSQL → PWA
   (230/230 assertions REST sous ingestion concurrente).
 

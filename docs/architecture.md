@@ -5,8 +5,8 @@
 | Nœud | Logiciel | Rôle |
 |---|---|---|
 | Station ESP32 (×N) | `firmware/` (Arduino, PubSubClient, ArduinoJson) | mesure, actionneurs, règle de sécurité locale, LWT |
-| Passerelle Raspberry Pi | Mosquitto 2 + Node-RED 4 (`gateway/`) | broker local authentifié, validation/filtrage, détection de station muette, pont TLS |
-| VM Cloud IaaS | Docker Compose (`deploy/`) | Mosquitto Cloud (8883), WildFly 42 (Jakarta EE 11 : middleware **et** front-ends), PostgreSQL 16, Nginx (terminaison TLS), CoreDNS (domaine local) |
+| Passerelle Raspberry Pi | Mosquitto 2 + Node-RED 4 (`backend/gateway/`) | broker local authentifié, validation/filtrage, détection de station muette, pont TLS |
+| VM Cloud IaaS | Docker Compose (`backend/deploy/`) | Mosquitto Cloud (8883), WildFly 42 (Jakarta EE 11 : middleware **et** front-ends), PostgreSQL 16, Nginx (terminaison TLS), CoreDNS (domaine local) |
 | Smartphone / navigateur | front-office (`www.<domaine>`), back-office (`admin.<domaine>`) | HTTPS (REST sur `api.<domaine>`), WSS (temps réel), Web Push |
 
 ## Découpage du middleware (`middleware/`)
@@ -72,7 +72,10 @@ Erreur mesurée sur une montée linéaire : < 20 % (objectif du § 2.5), voir `A
 ## Persistance (PostgreSQL)
 
 `stations`, `measurements` (index station+date), `alerts` (horodatages de fermeture/réouverture pour les KPI),
-`commands` (audit et acquittement), `identities`, `push_subscriptions`, `app_settings` (clés VAPID).
+`commands` (audit et acquittement), `identities`, `push_subscriptions`, `app_settings` (clés VAPID),
+`prediction_records` (ce que le modèle annonçait, puis ce qui a été mesuré) et `sensor_diagnostics`
+(chaque lecture du capteur avec son verdict, y compris celles que la passerelle écarte) — voir
+[`ml-architecture.md`](ml-architecture.md).
 Schéma créé/mis à jour par Hibernate 7 (`hbm2ddl=update`). Identifiants UUIDv7, verrouillage optimiste
 (`@Version`) exposé en ETag (`If-Match` / `If-None-Match`).
 

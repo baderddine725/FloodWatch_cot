@@ -18,8 +18,11 @@ import tn.supcom.cot.core.controllers.repositories.AbstractRepository;
 import tn.supcom.cot.api.entities.Measurement;
 import tn.supcom.cot.api.entities.Station;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Accès aux mesures. */
@@ -50,6 +53,19 @@ public class MeasurementRepository extends AbstractRepository<Measurement, UUID>
         return em.createQuery("select m from Measurement m where m.station = :s and m.ts >= :from order by m.ts",
                         Measurement.class)
                 .setParameter("s", station).setParameter("from", from).getResultList();
+    }
+
+    /**
+     * Mesure la plus proche d'un instant, dans une tolérance donnée.
+     *
+     * @return vide si la station n'a rien mesuré autour de cet instant (muette, capteur en défaut)
+     */
+    public Optional<Measurement> findNearest(Station station, Instant target, Duration tolerance) {
+        return em.createQuery("select m from Measurement m where m.station = :s and m.ts between :a and :b",
+                        Measurement.class)
+                .setParameter("s", station).setParameter("a", target.minus(tolerance))
+                .setParameter("b", target.plus(tolerance)).getResultList().stream()
+                .min(Comparator.comparingLong(m -> Math.abs(Duration.between(target, m.getTs()).toMillis())));
     }
 
     /** Nombre de mesures sur une période. */

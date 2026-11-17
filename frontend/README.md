@@ -84,7 +84,7 @@ de la route (`roadOpen`) et automatismes viennent du serveur.
 ### Pile complète (recommandé)
 
 ```bash
-cd deploy
+cd backend/deploy
 cp .env.example .env               # puis changer les secrets
 ./scripts/gen-certs.sh floodwatch.local 127.0.0.1
 docker compose up -d --build
@@ -100,8 +100,8 @@ sudo ./scripts/dns-hosts.sh floodwatch.local 127.0.0.1    # Windows : .\scripts\
 Générer des mesures avec le simulateur :
 
 ```bash
-pip install -r simulator/requirements.txt
-python3 simulator/floodwatch_sim.py --host localhost --port 8883 --tls --cafile deploy/certs/ca.crt \
+pip install -r backend/simulator/requirements.txt
+python3 backend/simulator/floodwatch_sim.py --host localhost --port 8883 --tls --cafile backend/deploy/certs/ca.crt \
         --username gateway --password <MQTT_GATEWAY_PASSWORD> --scenario storm --speed 3 -v
 ```
 

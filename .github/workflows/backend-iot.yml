@@ -13,27 +13,27 @@ on:
   push:
     paths:
       - "prediction/**"
-      - "simulator/**"
-      - "gateway/**"
+      - "backend/simulator/**"
+      - "backend/gateway/**"
       - "firmware/**"
-      - "deploy/mosquitto/**"
-      - "deploy/scripts/**"
-      - "deploy/docker-compose.yml"
-      - "deploy/.env.example"
-      - "deploy/coredns/**"
+      - "backend/deploy/mosquitto/**"
+      - "backend/deploy/scripts/**"
+      - "backend/deploy/docker-compose.yml"
+      - "backend/deploy/.env.example"
+      - "backend/deploy/coredns/**"
       - "docs/wot/**"
       - ".github/workflows/backend-iot.yml"
   pull_request:
     paths:
       - "prediction/**"
-      - "simulator/**"
-      - "gateway/**"
+      - "backend/simulator/**"
+      - "backend/gateway/**"
       - "firmware/**"
-      - "deploy/mosquitto/**"
-      - "deploy/scripts/**"
-      - "deploy/docker-compose.yml"
-      - "deploy/.env.example"
-      - "deploy/coredns/**"
+      - "backend/deploy/mosquitto/**"
+      - "backend/deploy/scripts/**"
+      - "backend/deploy/docker-compose.yml"
+      - "backend/deploy/.env.example"
+      - "backend/deploy/coredns/**"
       - "docs/wot/**"
       - ".github/workflows/backend-iot.yml"
   workflow_dispatch:
@@ -63,14 +63,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: simulator
+        working-directory: backend/simulator
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: simulator/requirements*.txt
+          cache-dependency-path: backend/simulator/requirements*.txt
       - run: pip install -r requirements-dev.txt
       - name: Tests (config, MQTT, station, validation des TD, fichiers générés à jour)
         run: python -m pytest -q
@@ -84,17 +84,17 @@ jobs:
         with:
           node-version: "22"
       - name: Tests des fonctions du flux Node-RED
-        run: node --test gateway/node-red/test/flows.test.mjs
+        run: node --test backend/gateway/node-red/test/flows.test.mjs
       - name: Syntaxe des réglages et du flux
         run: |
-          node --check gateway/node-red/settings.js
-          node -e "JSON.parse(require('fs').readFileSync('gateway/node-red/flows.json', 'utf8'))"
+          node --check backend/gateway/node-red/settings.js
+          node -e "JSON.parse(require('fs').readFileSync('backend/gateway/node-red/flows.json', 'utf8'))"
       - name: Syntaxe des scripts shell
         run: |
-          for f in deploy/mosquitto/entrypoint.sh gateway/mosquitto/docker-entrypoint.sh deploy/scripts/test-acl.sh firmware/tools/build.sh; do
+          for f in backend/deploy/mosquitto/entrypoint.sh backend/gateway/mosquitto/docker-entrypoint.sh backend/deploy/scripts/test-acl.sh firmware/tools/build.sh; do
             sh -n "$f" && echo "ok  $f"
           done
-          for f in gateway/install-gateway.sh deploy/scripts/install-vm.sh deploy/scripts/gen-certs.sh; do
+          for f in backend/gateway/install-gateway.sh backend/deploy/scripts/install-vm.sh backend/deploy/scripts/gen-certs.sh; do
             bash -n "$f" && echo "ok  $f"
           done
 
@@ -125,7 +125,7 @@ jobs:
     needs: [gateway]
     defaults:
       run:
-        working-directory: deploy
+        working-directory: backend/deploy
     steps:
       - uses: actions/checkout@v4
       - name: Secrets aléatoires et certificats (comme install-vm.sh)

@@ -14,6 +14,7 @@ package tn.supcom.cot.api.controllers.managers;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import jakarta.json.JsonArray;
 import jakarta.json.JsonNumber;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonValue;
@@ -22,6 +23,7 @@ import tn.supcom.cot.api.controllers.alerting.AlertEngine;
 import tn.supcom.cot.api.controllers.alerting.AlertLevel;
 import tn.supcom.cot.api.controllers.alerting.Sample;
 import tn.supcom.cot.api.controllers.repositories.MeasurementRepository;
+import tn.supcom.cot.api.controllers.repositories.SensorDiagnosticRepository;
 import tn.supcom.cot.api.controllers.repositories.StationRepository;
 import tn.supcom.cot.api.dto.LiveMessage;
 import tn.supcom.cot.api.dto.MeasurementDto;
@@ -32,6 +34,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -56,6 +59,10 @@ public class ThingManager {
     private CommandManager commandManager;
     @Inject
     private Event<LiveMessage> live;
+    @Inject
+    private SensorDiagnosticRepository diagnostics;
+    @Inject
+    private PredictionHistory predictionHistory;
 
     private final AlertEngine engine = new AlertEngine();
 
@@ -82,6 +89,7 @@ public class ThingManager {
                 alertManager.raise(station, AlertType.SENSOR_FAULT, AlertLevel.ORANGE,
                         "Capteur de niveau défaillant ou mesure incohérente (" + level + " cm)", now);
             }
+            recordDiagnostics(station, msg, SensorVerdict.FAULT, level, now);
             station.setRain(rain);
             broadcastStation(station);
             return;
@@ -93,6 +101,7 @@ public class ThingManager {
         level = Math.max(0, level);
         double pct = t.toEngine().percent(level);
         var measurement = measurements.persist(new Measurement(station, now, level, pct, rain));
+        recordDiagnostics(station, msg, SensorVerdict.ACCEPTED, level, now);
 
         var history = measurements.findSince(station, now.minus(HISTORY)).stream()
                 .map(m -> new Sample(m.getTs(), m.getLevelCm())).toList();
@@ -120,6 +129,17 @@ public class ThingManager {
         station.setLastMeasurementAt(now);
         station.setAlertLevel(result.level());
         measurement.setAlertLevel(result.level());
+
+        // Historique des prédictions : observation seule, dans sa propre transaction. Un incident
+        // ici est journalisé et n'interrompt jamais le traitement de la mesure.
+        if (predictionHistory.due(station.getId(), now)) {
+            try {
+                predictionHistory.record(station.getId(), result.prediction(), engine.modelId(), now,
+                        t.getSensorHeightCm());
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Prediction history unavailable for " + code, e);
+            }
+        }
 
         if (result.level() != previous) {
             LOG.info(() -> String.format(Locale.ROOT, "Station %s: %s -> %s (%s)", code, previous,
@@ -233,6 +253,31 @@ public class ThingManager {
 
     private void broadcastStation(Station station) {
         live.fire(new LiveMessage("station", StationDto.of(station), false));
+    }
+
+    /**
+     * Historise le diagnostic de la lecture courante, ainsi que celui des échos que la passerelle
+     * a écartés depuis la mesure précédente (tableau « outliers » du message de télémétrie).
+     */
+    private void recordDiagnostics(Station station, JsonObject msg, SensorVerdict verdict, Double level, Instant now) {
+        Double raw = msg.containsKey("rawLevelCm") ? numberOrNull(msg, "rawLevelCm") : level;
+        diagnostics.persist(new SensorDiagnostic(station, now, verdict, raw, intOrNull(msg, "echoOk"),
+                numberOrNull(msg, "echoSpreadCm")));
+        if (!(msg.get("outliers") instanceof JsonArray outliers)) return;
+        for (JsonValue item : outliers) {
+            if (!(item instanceof JsonObject o)) continue;
+            Instant ts = o.get("ts") instanceof JsonNumber n ? Instant.ofEpochMilli(n.longValue()) : now;
+            diagnostics.persist(new SensorDiagnostic(station, ts, SensorVerdict.OUTLIER, numberOrNull(o, "levelCm"),
+                    intOrNull(o, "echoOk"), numberOrNull(o, "echoSpreadCm")));
+        }
+    }
+
+    private static Double numberOrNull(JsonObject o, String key) {
+        return o.get(key) instanceof JsonNumber n ? n.doubleValue() : null;
+    }
+
+    private static Integer intOrNull(JsonObject o, String key) {
+        return o.get(key) instanceof JsonNumber n ? n.intValue() : null;
     }
 
     private static double number(JsonObject o, String key, double def) {

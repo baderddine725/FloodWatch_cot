@@ -25,4 +25,14 @@ public interface OverflowPredictor {
      * @return la prédiction
      */
     Prediction predict(List<Sample> samples, double criticalCm);
+
+    /**
+     * Identifiant stable du modèle, enregistré avec chaque prédiction : c'est lui qui permet
+     * de comparer deux modèles (ou deux versions) sur les mêmes mesures réelles.
+     *
+     * @return un nom court sans espace (ex. « median+linreg-120s »)
+     */
+    default String modelId() {
+        return getClass().getSimpleName();
+    }
 }

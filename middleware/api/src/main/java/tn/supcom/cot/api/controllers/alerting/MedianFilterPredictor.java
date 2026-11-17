@@ -37,6 +37,11 @@ public class MedianFilterPredictor implements OverflowPredictor {
     }
 
     @Override
+    public String modelId() {
+        return "median+" + delegate.modelId();
+    }
+
+    @Override
     public Prediction predict(List<Sample> samples, double criticalCm) {
         return delegate.predict(filter(samples), criticalCm);
     }

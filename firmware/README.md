@@ -40,8 +40,8 @@ Copy-Item include\station_config.example.h include\station_config.h   # ignoré 
 
 | Constante | Valeur pour un essai sur la pile Docker du PC |
 |---|---|
-| `STATION_CODE` | `underpass-01` (doit figurer dans `STATION_CODES` de `deploy/.env`) |
-| `MQTT_PASSWORD` | valeur de `STATION_PASSWORD` dans `deploy/.env` |
+| `STATION_CODE` | `underpass-01` (doit figurer dans `STATION_CODES` de `backend/deploy/.env`) |
+| `MQTT_PASSWORD` | valeur de `STATION_PASSWORD` dans `backend/deploy/.env` |
 | `WIFI_SSID`, `WIFI_PASSWORD` | ton réseau Wi-Fi (le même que le PC) |
 | `MQTT_HOST` | adresse IP du PC (`ipconfig`), `MQTT_PORT` = 1883 (broker `mosquitto-local`) |
 | `USE_GATEWAY_RAW` | `1` (mesures brutes filtrées par Node-RED) |
@@ -52,7 +52,7 @@ Sous Windows, autoriser le port 1883 en entrée dans le pare-feu (réseau privé
 
 ## 3. Compiler et flasher
 
-- **Compilation seule**, sans rien installer : `cd deploy; docker compose --profile tools run --rm firmware`.
+- **Compilation seule**, sans rien installer : `cd backend/deploy; docker compose --profile tools run --rm firmware`.
 - **Flashage** : il faut l'accès au port USB, donc PlatformIO sur le PC (extension *PlatformIO IDE* de
   VS Code, ou `pip install platformio`) :
 

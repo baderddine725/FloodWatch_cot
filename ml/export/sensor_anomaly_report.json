@@ -1,0 +1,683 @@
+{
+  "protocol": {
+    "hours_per_seed": 24.0,
+    "seeds": {
+      "train": [
+        101,
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "validation": [
+        201,
+        202
+      ],
+      "test": [
+        301
+      ]
+    },
+    "rule_spread_cm": 1.0,
+    "bad_error_cm": 2.0,
+    "features": [
+      "echo_ok",
+      "spread_cm",
+      "jump_cm",
+      "std6_cm",
+      "slope6_cm_min",
+      "rain",
+      "rain_mean6",
+      "rejected6",
+      "spread_mean6",
+      "echo_ok_mean6"
+    ],
+    "window": 6,
+    "exported_experiment": "randomized",
+    "test_readings": {
+      "test_nominal": 15935,
+      "test_shifted": 16236
+    }
+  },
+  "experiments": {
+    "nominal": {
+      "training_sensor": "nominal",
+      "data": {
+        "train_readings": 97398,
+        "train_bad": 10004,
+        "validation_readings": 31965
+      },
+      "false_alarm_limit_from_validation": 0.0949,
+      "chosen_family": "tree",
+      "selected": {
+        "tree": {
+          "max_depth": 4,
+          "bad_weight": 12.0,
+          "nodes": 29,
+          "meets_false_alarm_limit": true,
+          "depth": 4
+        },
+        "forest": {
+          "max_depth": 6,
+          "bad_weight": 12.0,
+          "trees": 10,
+          "nodes": 980,
+          "meets_false_alarm_limit": true,
+          "depth": 6
+        }
+      },
+      "validation": {
+        "rule": {
+          "bad": 3570,
+          "good": 24509,
+          "bad_recall": 0.605,
+          "false_alarm": 0.0949,
+          "flagged_degraded": 0.5069,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 739,
+              "caught": 0.5886
+            },
+            "SPLASH": {
+              "bad": 251,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 633,
+              "caught": 0.9968
+            },
+            "OBSTRUCTED": {
+              "bad": 1328,
+              "caught": 0.5964
+            },
+            "STUCK": {
+              "bad": 539,
+              "caught": 0.0909
+            },
+            "DRIFT": {
+              "bad": 80,
+              "caught": 0.025
+            }
+          }
+        },
+        "tree": {
+          "bad": 3570,
+          "good": 24509,
+          "bad_recall": 0.8378,
+          "false_alarm": 0.0397,
+          "flagged_degraded": 0.4722,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 739,
+              "caught": 0.9905
+            },
+            "SPLASH": {
+              "bad": 251,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 633,
+              "caught": 0.97
+            },
+            "OBSTRUCTED": {
+              "bad": 1328,
+              "caught": 0.9864
+            },
+            "STUCK": {
+              "bad": 539,
+              "caught": 0.1558
+            },
+            "DRIFT": {
+              "bad": 80,
+              "caught": 0.0
+            }
+          }
+        },
+        "forest": {
+          "bad": 3570,
+          "good": 24509,
+          "bad_recall": 0.8375,
+          "false_alarm": 0.0086,
+          "flagged_degraded": 0.3441,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 739,
+              "caught": 0.9932
+            },
+            "SPLASH": {
+              "bad": 251,
+              "caught": 0.9761
+            },
+            "FOAM": {
+              "bad": 633,
+              "caught": 0.9937
+            },
+            "OBSTRUCTED": {
+              "bad": 1328,
+              "caught": 0.9789
+            },
+            "STUCK": {
+              "bad": 539,
+              "caught": 0.1521
+            },
+            "DRIFT": {
+              "bad": 80,
+              "caught": 0.0
+            }
+          }
+        }
+      },
+      "feature_importance": {
+        "echo_ok": 0.0,
+        "spread_cm": 0.0338,
+        "jump_cm": 0.2216,
+        "std6_cm": 0.0737,
+        "slope6_cm_min": 0.0604,
+        "rain": 0.0,
+        "rain_mean6": 0.0684,
+        "rejected6": 0.0,
+        "spread_mean6": 0.5372,
+        "echo_ok_mean6": 0.0048
+      },
+      "test_nominal": {
+        "rule": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.6857,
+          "false_alarm": 0.1046,
+          "flagged_degraded": 0.5364,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.6291
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 1.0
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.5948
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.1395
+            }
+          }
+        },
+        "tree": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.9554,
+          "false_alarm": 0.0438,
+          "flagged_degraded": 0.4939,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.989
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 0.9586
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.9893
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.407
+            }
+          }
+        },
+        "forest": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.9576,
+          "false_alarm": 0.0089,
+          "flagged_degraded": 0.3574,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.9945
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 0.9917
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 0.9882
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.9833
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.3837
+            }
+          }
+        }
+      },
+      "test_shifted": {
+        "rule": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.4583,
+          "false_alarm": 0.3271,
+          "flagged_degraded": 0.6415,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.379
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.9326
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.4086
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.3457
+            }
+          }
+        },
+        "tree": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.8881,
+          "false_alarm": 0.6983,
+          "flagged_degraded": 0.7728,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.9524
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.9382
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.8397
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.8642
+            }
+          }
+        },
+        "forest": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.8169,
+          "false_alarm": 0.1841,
+          "flagged_degraded": 0.5211,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.9643
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.8427
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.7613
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.3951
+            }
+          }
+        }
+      }
+    },
+    "randomized": {
+      "training_sensor": "randomized",
+      "data": {
+        "train_readings": 97628,
+        "train_bad": 10252,
+        "validation_readings": 32180
+      },
+      "false_alarm_limit_from_validation": 0.0776,
+      "chosen_family": "tree",
+      "selected": {
+        "tree": {
+          "max_depth": 4,
+          "bad_weight": 12.0,
+          "nodes": 31,
+          "meets_false_alarm_limit": true,
+          "depth": 4,
+          "header_bytes": 4695,
+          "text_bytes_x86_Os": 284,
+          "c_agreement": 1.0
+        },
+        "forest": {
+          "max_depth": 6,
+          "bad_weight": 8.0,
+          "trees": 10,
+          "nodes": 1010,
+          "meets_false_alarm_limit": true,
+          "depth": 6
+        }
+      },
+      "validation": {
+        "rule": {
+          "bad": 3457,
+          "good": 24810,
+          "bad_recall": 0.6563,
+          "false_alarm": 0.0776,
+          "flagged_degraded": 0.4822,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 435,
+              "caught": 0.6345
+            },
+            "SPLASH": {
+              "bad": 160,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 929,
+              "caught": 0.9925
+            },
+            "OBSTRUCTED": {
+              "bad": 1344,
+              "caught": 0.6414
+            },
+            "STUCK": {
+              "bad": 542,
+              "caught": 0.0849
+            },
+            "DRIFT": {
+              "bad": 47,
+              "caught": 0.0638
+            }
+          }
+        },
+        "tree": {
+          "bad": 3457,
+          "good": 24810,
+          "bad_recall": 0.8276,
+          "false_alarm": 0.0266,
+          "flagged_degraded": 0.4712,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 435,
+              "caught": 0.9885
+            },
+            "SPLASH": {
+              "bad": 160,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 929,
+              "caught": 0.929
+            },
+            "OBSTRUCTED": {
+              "bad": 1344,
+              "caught": 0.9754
+            },
+            "STUCK": {
+              "bad": 542,
+              "caught": 0.179
+            },
+            "DRIFT": {
+              "bad": 47,
+              "caught": 0.0
+            }
+          }
+        },
+        "forest": {
+          "bad": 3457,
+          "good": 24810,
+          "bad_recall": 0.823,
+          "false_alarm": 0.0064,
+          "flagged_degraded": 0.356,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 435,
+              "caught": 0.9931
+            },
+            "SPLASH": {
+              "bad": 160,
+              "caught": 0.9938
+            },
+            "FOAM": {
+              "bad": 929,
+              "caught": 0.9806
+            },
+            "OBSTRUCTED": {
+              "bad": 1344,
+              "caught": 0.9702
+            },
+            "STUCK": {
+              "bad": 542,
+              "caught": 0.072
+            },
+            "DRIFT": {
+              "bad": 47,
+              "caught": 0.0
+            }
+          }
+        }
+      },
+      "feature_importance": {
+        "echo_ok": 0.0,
+        "spread_cm": 0.0348,
+        "jump_cm": 0.2091,
+        "std6_cm": 0.0581,
+        "slope6_cm_min": 0.0514,
+        "rain": 0.0,
+        "rain_mean6": 0.0701,
+        "rejected6": 0.0012,
+        "spread_mean6": 0.5753,
+        "echo_ok_mean6": 0.0001
+      },
+      "test_nominal": {
+        "rule": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.6857,
+          "false_alarm": 0.1046,
+          "flagged_degraded": 0.5364,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.6291
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 1.0
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.5948
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.1395
+            }
+          }
+        },
+        "tree": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.9502,
+          "false_alarm": 0.0382,
+          "flagged_degraded": 0.4816,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.9863
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 0.932
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.9857
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.4535
+            }
+          }
+        },
+        "forest": {
+          "bad": 1747,
+          "good": 12635,
+          "bad_recall": 0.9513,
+          "false_alarm": 0.0059,
+          "flagged_degraded": 0.3645,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 364,
+              "caught": 0.9945
+            },
+            "SPLASH": {
+              "bad": 120,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 338,
+              "caught": 0.9822
+            },
+            "OBSTRUCTED": {
+              "bad": 839,
+              "caught": 0.9774
+            },
+            "STUCK": {
+              "bad": 86,
+              "caught": 0.3256
+            }
+          }
+        }
+      },
+      "test_shifted": {
+        "rule": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.4583,
+          "false_alarm": 0.3271,
+          "flagged_degraded": 0.6415,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.379
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.9326
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.4086
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.3457
+            }
+          }
+        },
+        "tree": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.8392,
+          "false_alarm": 0.2927,
+          "flagged_degraded": 0.6011,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.9524
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.8539
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.8017
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.4691
+            }
+          }
+        },
+        "forest": {
+          "bad": 1617,
+          "good": 12343,
+          "bad_recall": 0.7934,
+          "false_alarm": 0.0417,
+          "flagged_degraded": 0.4301,
+          "by_condition": {
+            "GLITCH": {
+              "bad": 504,
+              "caught": 0.9643
+            },
+            "SPLASH": {
+              "bad": 12,
+              "caught": 1.0
+            },
+            "FOAM": {
+              "bad": 178,
+              "caught": 0.8371
+            },
+            "OBSTRUCTED": {
+              "bad": 842,
+              "caught": 0.734
+            },
+            "STUCK": {
+              "bad": 81,
+              "caught": 0.2222
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -q package \
 # ---- 2. Serveur d'applications ----
 FROM ${WILDFLY_IMAGE}
 # Domaine de base : les alias des hôtes virtuels sont écrits dans standalone.xml
-# à la construction de l'image (docker compose build prend la valeur de deploy/.env).
+# à la construction de l'image (docker compose build prend la valeur de backend/deploy/.env).
 ARG BASE_DOMAIN=floodwatch.local
 COPY --from=build /drivers/postgresql.jar /tmp/postgresql.jar
 COPY wildfly /tmp/wildfly
