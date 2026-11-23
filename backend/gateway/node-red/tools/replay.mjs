@@ -3,13 +3,15 @@
 //  Couche    : passerelle – banc d'essai du fog
 //  Fichier   : backend/gateway/node-red/tools/replay.mjs
 //  Équipe    : FloodWatch – Auteur : Guesmi Baderddine
-//  Créé le   : 2026-11-17          Modifié le : 2026-11-17          Version : 1.0
+//  Créé le   : 2026-11-17          Modifié le : 2026-11-23          Version : 1.1
 // =============================================================================
 // Rejoue de la télémétrie brute dans les VRAIES fonctions du flux Node-RED (flows.json), avec une
 // horloge simulée : filtrage -> propagation amont/aval, et calibration toutes les 5 min. C'est le
 // code déployé sur la passerelle qui est évalué, pas une réécriture.
 //
 // Entrée (stdin, une ligne JSON par message) : {"t": <ms>, "code": "...", "payload": {...télémétrie brute}}
+//   ou une prévision de pluie {"t": <ms>, "outlook": {"<code>": {start, stepSec, values}}}, rangée dans
+//   flow.rainOutlook comme le ferait le nœud météo de la passerelle.
 // Sortie (stdout, une ligne JSON par événement) : {"t": <ms>, "kind": "event"|"cmd", "topic": "...", "payload": {...}}
 // Usage : node tools/replay.mjs [stations.json] < lectures.jsonl
 import { readFileSync } from 'node:fs';
@@ -50,8 +52,12 @@ let nextCalib = null;
 const rl = createInterface({ input: process.stdin });
 for await (const line of rl) {
     if (!line.trim()) continue;
-    const { t, code, payload } = JSON.parse(line);
+    const { t, code, payload, outlook } = JSON.parse(line);
     clock = t;
+    if (outlook) {
+        flow.set('rainOutlook', { ...(flow.get('rainOutlook') || {}), ...outlook });
+        continue;
+    }
     if (nextCalib === null) nextCalib = t + CALIB_MS;
     while (clock >= nextCalib) {
         const saved = clock;

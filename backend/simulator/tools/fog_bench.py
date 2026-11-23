@@ -5,8 +5,8 @@
 #  Fichier   : backend/simulator/tools/fog_bench.py
 #  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
 #  Auteur    : Guesmi Baderddine
-#  Créé le   : 2026-11-17          Modifié le : 2026-11-17
-#  Version   : 1.0
+#  Créé le   : 2026-11-17          Modifié le : 2026-11-23
+#  Version   : 1.1
 # =============================================================================
 """Évalue l'intelligence de la passerelle sur une zone simulée de trois stations couplées.
 
@@ -25,6 +25,13 @@ Usage (depuis backend/simulator/) ::
 
     python tools/fog_bench.py --hours 24 --seed 1                      # orages sur toute la zone
     python tools/fog_bench.py --hours 24 --seed 1 --pattern upstream   # orages sur le bassin amont
+    python tools/fog_bench.py --hours 24 --seed 1 --outlook oracle     # avec une prévision de pluie
+
+Prévision de pluie (``--outlook``) donnée à la passerelle comme le ferait le nœud météo
+(``flow.rainOutlook``) : ``oracle`` = pluie FUTURE réelle de chaque site, moyennée par pas de 15 min,
+publiée toutes les 15 min (borne haute : prévision parfaite) ; ``coarse`` = moyennes HORAIRES publiées
+toutes les heures (résolution d'un modèle météo ordinaire). ``PROP_CASCADE=0`` rejoue la propagation
+1.0 (niveau amont supposé constant).
 """
 from __future__ import annotations
 
@@ -95,6 +102,34 @@ def simulate(seed: int, hours: float, stations_file: Path = DEFAULT_STATIONS_FIL
                 "sensorOk": r.sensor_ok, "echoOk": r.echo_ok, "echoSpreadCm": round(r.echo_spread_cm, 2),
                 "seq": step}})
     return stations, links, messages, truth
+
+
+#: prévision : (pas en s, période de publication en s, nombre de pas)
+OUTLOOKS = {"oracle": (900, 900, 12), "coarse": (3600, 3600, 3)}
+
+
+def outlook_messages(messages: list[dict], kind: str) -> list[dict]:
+    """Prévisions de pluie construites sur la pluie FUTURE réelle de chaque site (voir --outlook)."""
+    if kind == "none":
+        return []
+    step_s, every_s, steps = OUTLOOKS[kind]
+    rain: dict[str, list[tuple[int, float]]] = {}
+    for m in messages:
+        rain.setdefault(m["code"], []).append((m["t"], m["payload"]["rain"]))
+    end = max(m["t"] for m in messages)
+    out, t = [], 0
+    while t <= end:
+        sites = {}
+        for code, series in rain.items():
+            values = []
+            for k in range(steps):
+                lo, hi = t + k * step_s * 1000, t + (k + 1) * step_s * 1000
+                window = [r for ts, r in series if lo <= ts < hi]
+                values.append(round(statistics.fmean(window), 3) if window else 0.0)
+            sites[code] = {"start": t, "stepSec": step_s, "values": values}
+        out.append({"t": t, "outlook": sites})
+        t += every_s * 1000
+    return out
 
 
 def replay(messages: list[dict]) -> list[dict]:
@@ -190,10 +225,13 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--pattern", choices=sorted(PATTERNS), default="zone",
                    help="zone : orages sur toute la zone ; upstream : orages sur le bassin amont")
+    p.add_argument("--outlook", choices=["none", *OUTLOOKS], default="none",
+                   help="prévision de pluie donnée à la passerelle (none : persistance)")
     p.add_argument("--json", action="store_true", help="résultat en JSON")
     a = p.parse_args(argv)
     stations, links, messages, truth = simulate(a.seed, a.hours, pattern=a.pattern)
-    events = replay(messages)
+    feed = sorted(messages + outlook_messages(messages, a.outlook), key=lambda m: (m["t"], "code" in m))
+    events = replay(feed)
     r = evaluate(stations, links, truth, events)
     if a.json:
         print(json.dumps(r, indent=2, ensure_ascii=False))

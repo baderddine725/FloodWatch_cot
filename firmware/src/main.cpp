@@ -5,8 +5,8 @@
  *  Fichier   : firmware/src/main.cpp – station FloodWatch (ESP32)
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Ksontini Amine
- *  Créé le   : 2026-11-02          Modifié le : 2026-11-17
- *  Version   : 1.3
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-23
+ *  Version   : 1.3.1
  * ============================================================================
  *  Fonctions :
  *   - mesure du niveau d'eau (HC-SR04, médiane de 5 échos) et de la pluie (ADC) ;
@@ -80,7 +80,6 @@ PubSubClient mqtt(net);
 String tTelemetry, tHeartbeat, tState, tStatus, tAck, tCmd, tConfig, tTd;
 
 // ----------------------------------------------------------------------------- utilitaires
-const char *lightName(Light l) { return fw::lightName(l); }
 
 float levelPct() { return 100.0f * levelCm / cfg.criticalCm; }
 
@@ -149,7 +148,7 @@ void publishState() {
   if (!mqtt.connected()) return;
   JsonDocument doc;
   doc["barrier"] = out.barrierClosed ? "CLOSED" : "OPEN";
-  doc["light"] = lightName(out.light);
+  doc["light"] = fw::lightName(out.light);
   doc["siren"] = out.siren;
   doc["sampling"] = watchMode() ? "WATCH" : "NORMAL";
   doc["localSafety"] = safety.mode() != fw::Mode::NORMAL;
