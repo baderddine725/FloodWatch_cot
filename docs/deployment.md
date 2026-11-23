@@ -1,5 +1,53 @@
 # Déploiement
 
+## 0. Hébergement public gratuit : Oracle Cloud « Always Free » + DuckDNS
+
+La pile complète (WildFly et les deux PWA, PostgreSQL, brokers, passerelle et stations simulées,
+cycle MLOps) demande environ 2 Go de mémoire : les VM gratuites de 1 Go (AWS, Google) ne suffisent
+pas. Oracle offre **gratuitement et sans limite de durée** une VM ARM jusqu'à 4 cœurs et 24 Go ;
+toutes les images de la pile existent en ARM64. DuckDNS fournit un nom gratuit dont **tous les
+sous-noms** (`www.`, `admin.`, `api.`, `iam.`) pointent vers la VM, et Let's Encrypt les certificats
+reconnus par les smartphones (indispensables pour installer la PWA et recevoir les notifications).
+
+**Dans les consoles (une fois) :**
+
+1. `duckdns.org` : se connecter (GitHub), créer un nom, p. ex. `floodwatch-cot` ; garder le **jeton**
+   pour soi (il ne va jamais dans le dépôt).
+2. Oracle Cloud → *Compute → Instances → Create instance* :
+   image **Ubuntu 24.04** ; forme **VM.Standard.A1.Flex** (Ampere, ARM), 2 OCPU / 12 Go suffisent
+   (« Out of capacity » : réessayer plus tard ou changer de domaine de disponibilité) ; ajouter sa
+   clé SSH publique ; noter l'**IP publique**.
+3. *Networking → Virtual Cloud Networks → (VCN) → Security Lists → Default* → *Add Ingress Rules* :
+   source `0.0.0.0/0`, TCP, ports de destination **80, 443, 8883** (22 est déjà ouvert).
+
+**Sur la VM** (`ssh ubuntu@<ip-publique>`) :
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/baderddine725/FloodWatch_cot/main/backend/deploy/scripts/deploy-cloud.sh
+bash deploy-cloud.sh floodwatch-cot.duckdns.org vous@exemple.tn      # le jeton DuckDNS est demandé
+```
+
+Le script (rejouable) ouvre le pare-feu de la VM, installe Docker, clone le dépôt, génère les
+secrets (`backend/deploy/.env`, mode 600), relie le nom DuckDNS à l'IP (puis toutes les 5 min),
+démarre la pile avec les profils `iot` et `ml`, obtient le certificat Let's Encrypt des cinq noms
+web et programme son renouvellement quotidien (`scripts/renew-web-cert.sh`). Résultat :
+
+| Adresse | Contenu |
+|---|---|
+| `https://www.floodwatch-cot.duckdns.org/` | espace citoyen (PWA installable) |
+| `https://admin.floodwatch-cot.duckdns.org/` | espace de pilotage (comptes `ADMIN_*` / `OPERATOR_*` du `.env`) |
+| `https://api.floodwatch-cot.duckdns.org/api/health` | état de l'API |
+| `mqtts://floodwatch-cot.duckdns.org:8883` | broker des passerelles réelles (AC privée `certs/ca.crt`) |
+
+**Ce qui n'est PAS exposé** : Node-RED (1880), le broker local (1883), MLflow (5000) et le DNS de la
+pile n'écoutent que sur `127.0.0.1` de la VM ; on y accède par tunnel SSH :
+`ssh -L 1880:localhost:1880 -L 5000:localhost:5000 ubuntu@<ip>`, puis `http://localhost:5000`.
+Le certificat web est celui de Let's Encrypt ; le broker MQTT garde l'AC privée, que les passerelles
+vérifient.
+
+Mise à jour après un `git push` sur `main` : `~/FloodWatch_cot/backend/deploy/scripts/update.sh`
+(les profils viennent de `COMPOSE_PROFILES` dans `.env`).
+
 ## 1. Cloud (VM IaaS Ubuntu 22.04/24.04)
 
 Prérequis : ports 80, 443, 8883 ouverts et 53 (UDP/TCP) si la VM doit servir le DNS du domaine.
