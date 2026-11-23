@@ -5,8 +5,8 @@
  *  Fichier   : ReservoirModel.java
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Guesmi Baderddine
- *  Créé le   : 2026-11-17          Modifié le : 2026-11-17
- *  Version   : 1.0
+ *  Créé le   : 2026-11-17          Modifié le : 2026-11-23
+ *  Version   : 1.1
  * ============================================================================
  */
 package tn.supcom.cot.api.controllers.intelligence;
@@ -20,9 +20,9 @@ import java.util.function.DoubleUnaryOperator;
  * </pre>
  * Les coefficients {@code a}, {@code b}, {@code g} sont estimés par la passerelle (fog) sur les
  * mesures du site. L'apport amont pendant le temps de parcours est CONNU (niveaux déjà mesurés en
- * amont) ; au-delà, le niveau amont est supposé constant. La pluie est supposée constante sur
- * l'horizon (persistance) : faute de prévision météo, c'est l'hypothèse la plus simple, et elle
- * est annoncée dans la réponse du service.
+ * amont) ; au-delà, le niveau amont est supposé constant. La pluie est une fonction du temps :
+ * prévision météo raccordée à la mesure ({@link RainOutlook}) quand elle existe, sinon constante
+ * (persistance). L'hypothèse retenue est annoncée dans la réponse du service.
  *
  * @param a coefficient pluie -> montée (cm/min par unité de pluie)
  * @param b vidange (1/min)
@@ -44,12 +44,21 @@ public record ReservoirModel(double a, double b, double g) {
      */
     public double[] forecast(double level0, double rain, DoubleUnaryOperator upstreamAt, double[] horizonsS,
                              double maxLevel) {
+        return forecast(level0, offsetS -> rain, upstreamAt, horizonsS, maxLevel);
+    }
+
+    /**
+     * Même intégration, avec une pluie variable : {@code rainAt} donne la pluie (0..1) en fonction du
+     * décalage en s depuis maintenant.
+     */
+    public double[] forecast(double level0, DoubleUnaryOperator rainAt, DoubleUnaryOperator upstreamAt,
+                             double[] horizonsS, double maxLevel) {
         double[] out = new double[horizonsS.length];
         double level = level0, t = 0.0;
         for (int i = 0; i < horizonsS.length; i++) {
             while (t < horizonsS[i] - 1e-9) {
                 double dt = Math.min(STEP_S, horizonsS[i] - t);
-                double dLdtPerMin = a * rain - b * level + g * upstreamAt.applyAsDouble(t);
+                double dLdtPerMin = a * rainAt.applyAsDouble(t) - b * level + g * upstreamAt.applyAsDouble(t);
                 level = Math.max(0.0, Math.min(maxLevel, level + dLdtPerMin * dt / 60.0));
                 t += dt;
             }

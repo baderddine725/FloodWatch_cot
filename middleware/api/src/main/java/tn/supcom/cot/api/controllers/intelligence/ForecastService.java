@@ -5,8 +5,8 @@
  *  Fichier   : ForecastService.java
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Guesmi Baderddine
- *  Créé le   : 2026-11-17          Modifié le : 2026-11-17
- *  Version   : 1.0
+ *  Créé le   : 2026-11-17          Modifié le : 2026-11-23
+ *  Version   : 1.1
  * ============================================================================
  */
 package tn.supcom.cot.api.controllers.intelligence;
@@ -38,8 +38,9 @@ import java.util.Optional;
  *   <li><b>Incertitude</b> : erreur MESURÉE de la même méthode au même horizon, sur 7 jours, par
  *       l'historique des prédictions ; extrapolée en √h au-delà du plus long horizon mesuré ; valeur
  *       par défaut prudente sans historique. L'origine est toujours indiquée.</li>
- *   <li><b>Hypothèses</b> : pluie constante sur l'horizon (pas de prévision météo), niveau amont
- *       constant au-delà de ce qui est déjà mesuré. Elles figurent dans la réponse.</li>
+ *   <li><b>Hypothèses</b> : pluie prévue par le service météo raccordée à la pluie mesurée
+ *       ({@link WeatherService}, si configuré), sinon constante sur l'horizon ; niveau amont constant
+ *       au-delà de ce qui est déjà mesuré. Elles figurent dans la réponse.</li>
  * </ul>
  */
 @ApplicationScoped
@@ -58,6 +59,8 @@ public class ForecastService {
     private StationRepository stations;
     @Inject
     private MeasurementRepository measurements;
+    @Inject
+    private WeatherService weather;
     @Inject
     private PredictionRepository predictions;
 
@@ -83,8 +86,18 @@ public class ForecastService {
         var model = new ReservoirModel(s.getResponseA(), s.getResponseB(),
                 s.getResponseG() == null ? 0.0 : s.getResponseG());
         var upstream = upstreamInput(s, now);
-        return Optional.of(model.forecast(s.getLevelCm(), recentRain(s, now), upstream::at, horizonsS,
+        return Optional.of(model.forecast(s.getLevelCm(), rainAt(s, now), upstream::at, horizonsS,
                 s.getThresholds().getSensorHeightCm()));
+    }
+
+    /** Pluie supposée sur l'horizon : prévision raccordée à la mesure, sinon persistance. */
+    private java.util.function.DoubleUnaryOperator rainAt(Station s, Instant now) {
+        double rainNow = recentRain(s, now);
+        return outlook(s, now).map(o -> o.blended(now, rainNow)).orElse(offsetS -> rainNow);
+    }
+
+    private Optional<RainOutlook> outlook(Station s, Instant now) {
+        return weather == null ? Optional.empty() : weather.outlook(s, now);
     }
 
     /** Prévision complète d'une station. */
@@ -115,7 +128,15 @@ public class ForecastService {
                     round(sigma.value()), sigma.basis()));
         }
         var assumptions = new LinkedHashMap<String, Object>();
-        assumptions.put("rain", "constante sur l'horizon (persistance de la pluie des 10 dernières minutes)");
+        var outlook = RESERVOIR.equals(method) ? outlook(s, now) : Optional.<RainOutlook>empty();
+        if (outlook.isPresent()) {
+            assumptions.put("rain", "prévision " + outlook.get().source() + " raccordée à la pluie mesurée "
+                    + "(poids exp(-t/15 min)), dernière valeur prévue au-delà");
+            assumptions.put("rainOutlook", Map.of("source", outlook.get().source(),
+                    "issuedAt", outlook.get().issuedAt(), "coverageMin", outlook.get().coverageMinutes(now)));
+        } else {
+            assumptions.put("rain", "constante sur l'horizon (persistance de la pluie des 10 dernières minutes)");
+        }
         assumptions.put("rainNow", round(recentRain(s, now)));
         if (RESERVOIR.equals(method) && s.getUpstreamLinks() != null && !s.getUpstreamLinks().isBlank()) {
             assumptions.put("upstream", "niveaux amont mesurés pendant le temps de parcours, constants au-delà");

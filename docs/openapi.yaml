@@ -105,7 +105,7 @@ components:
         levelPct: { type: number }
         overflowRisk: { type: number, minimum: 0, maximum: 1, description: 'P(niveau >= critique) sous erreur gaussienne ; indice ordonné, non calibré sur des crues réelles' }
         sigmaCm: { type: number, description: "écart type de l'erreur de prévision à cet horizon" }
-        sigmaBasis: { type: string, enum: [measured, extrapolated, default], description: 'mesuré (historique 7 j), extrapolé en √h, ou prudent par défaut' }
+        sigmaBasis: { type: string, pattern: '^(measured|default|extrapolated-from-[0-9]+min)$', example: extrapolated-from-10min, description: 'mesuré (historique 7 j), extrapolé en √h depuis le plus long horizon mesuré, ou prudent par défaut' }
     Forecast:
       type: object
       properties:
