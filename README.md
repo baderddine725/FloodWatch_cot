@@ -104,6 +104,13 @@ Déploiement complet, passerelle et firmware : [`docs/deployment.md`](docs/deplo
 6. `--offline-after 60` : station muette, alerte « station hors ligne » en moins de 45 s.
 7. Mode dégradé : couper le broker Cloud. La station ferme quand même sa barrière (règle locale).
 
+Avec la passerelle (pile Docker complète), le simulateur tourne en **temps réel** (`SIM_SPEED=1`) sur
+le scénario `season` : orages de zone répétés toutes les 15 min sur les trois stations couplées
+(`upstream-01` → `wadi-01` → `underpass-01`). Le fog a besoin du temps physique (temps de parcours,
+calibration) : pré-alertes de propagation dès le premier orage, calibration de `upstream-01` après
+5 min, des stations aval après le deuxième épisode pluvieux (≈ 35 min), puis prévisions
+`reservoir-calibrated` sur `/api/intelligence`. Voir [`docs/ml-architecture.md`](docs/ml-architecture.md).
+
 ## Couverture du cahier des charges
 
 | Priorité | Fonctionnalité | État |

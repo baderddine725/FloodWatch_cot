@@ -82,6 +82,8 @@ services:
       # Vide : les en-têtes CORS sont posés par Undertow sur chaque hôte virtuel
       # (configure.cli). Ne renseigner que pour un front-end servi hors de WildFly.
       CORS_ALLOWED_ORIGINS: ""
+      # Entrée météo de la prévision : none (défaut, persistance) ou open-meteo (stations réelles).
+      FORECAST_WEATHER_PROVIDER: ${FORECAST_WEATHER_PROVIDER:-none}
     volumes:
       # Les deux front-ends et leurs ressources communes, servis tels quels par
       # Undertow. Sur une VM, le dossier est synchronisé par scripts/update.sh.
@@ -175,6 +177,8 @@ services:
       NODE_RED_ADMIN_PASSWORD: ${NODE_RED_ADMIN_PASSWORD:-}
       MUTE_AFTER_SEC: ${MUTE_AFTER_SEC:-60}
       SAFETY_PCT: ${SAFETY_PCT:-85}
+      # Prévision de pluie du fog (propagation) : none (défaut) ou open-meteo (stations réelles).
+      WEATHER_PROVIDER: ${GATEWAY_WEATHER_PROVIDER:-none}
     volumes:
       - ./certs/ca.crt:/certs/ca.crt:ro   # certificat PUBLIC de l'AC uniquement
       - noderedata:/data
@@ -197,7 +201,7 @@ services:
       SIM_STATIONS: ${SIM_STATIONS:-upstream-01,wadi-01,underpass-01}
       SIM_SCENARIO: ${SIM_SCENARIO:-season}
       SIM_FAULTS: ${SIM_FAULTS:-none}     # random : épisodes de défaut du capteur (banc simulé)
-      SIM_SPEED: ${SIM_SPEED:-3}
+      SIM_SPEED: ${SIM_SPEED:-1}             # 1 : temps physique (fog et prévisions en temps réel)
       SIM_OFFLINE_AFTER: ${SIM_OFFLINE_AFTER:-0}
       SIM_TD_BROKER_URL: mqtts://mqtt.${BASE_DOMAIN:-floodwatch.local}:8883
       SIM_STATIONS_FILE: /gateway/stations.json

@@ -292,6 +292,50 @@ pluie, la projection suppose que l'orage dure, alors que les orages amont du ban
 prévision météo est donc la prochaine entrée utile — c'est la « prédiction avancée avec API météo »
 du cahier des charges.
 
+**Prévision de pluie dans le fog** (passerelle v1.2). Deux changements, mesurés séparément sur le
+banc avant d'être adoptés :
+
+- *Pluie prévue* : `flow.rainOutlook[station]` (`{start, stepSec, values}`), rempli par un nœud
+  Open-Meteo optionnel (`GATEWAY_WEATHER_PROVIDER=open-meteo`, toutes les 15 min) ou par le banc
+  (`fog_bench.py --outlook oracle|coarse`). Périmée ou absente : persistance, comme avant.
+- *Cascade* : l'amont est projeté par son propre modèle calibré (niveaux amont déjà mesurés pendant
+  le parcours, puis projetés), au lieu d'être supposé constant.
+
+Fausses pré-alertes sur 24 h d'orages amont (graines 1 / 2) ; `oracle` = vraie pluie future par pas
+de 15 min (prévision parfaite), `horaire` = ses moyennes horaires publiées toutes les heures :
+
+| Configuration | passage souterrain | gué |
+|---|---|---|
+| sans prévision (= v1.1) | 5 / 2 | 37 / 35 |
+| cascade sans prévision | 12 / 14 | 37 / 34 |
+| cascade + oracle, raccordé à la pluie mesurée sur 15 min | 9 / 14 | 37 / 33 |
+| **cascade + oracle** (prévision seule) | **1 / 1** | 37 / 32 |
+| **cascade + horaire** (prévision seule) | **1 / 1** | 28 / 27 |
+
+Orages de zone : aucune pré-alerte infondée avec l'oracle et une avance égale ou meilleure (passage
+souterrain, graine 2 : 4,3 → 5,6 min) ; la prévision horaire, qui lisse les orages courts, coûte de
+l'avance au gué (graine 1 : 3,0 → 2,2 min) et une pré-alerte infondée au passage souterrain.
+
+Ce que le banc a appris, et les réglages qui en découlent :
+
+1. **La cascade sans prévision aggrave les choses** (5 → 12, 2 → 14) : elle prolonge un orage sans
+   fin sur l'amont. Elle ne s'active donc (`PROP_CASCADE=auto`) que si l'amont a une prévision.
+   Sans prévision, la propagation est exactement celle de la v1.1 (vérifié par un test).
+2. **Le raccord à la pluie mesurée annule le gain** : sur un orage de quelques minutes, 15 min de
+   persistance suffisent à projeter l'aval à l'orange. La passerelle utilise la prévision seule
+   (`PROP_RAIN_BLEND_S=0`). C'est admissible parce que la pré-alerte est une couche de **conseil** :
+   la sécurité locale de la station et les alertes du Cloud n'en dépendent pas. La prévision publiée
+   aux clients par le Cloud, elle, garde son raccord.
+3. **Les fausses pré-alertes du gué ne sont pas une affaire de pluie** : sur les 44 pré-alertes
+   fondées sur le modèle (graine 1), le vrai pic du gué est entre 50 et 60 % dans 35 cas (médiane
+   57,5 %, jamais sous 50 %) ; le pic projeté est surestimé d'environ 3 points et l'alerte part dès
+   qu'il franchit 60 %. Ce sont des **quasi-crues** au seuil orange. Une marge de décision, ou une
+   pré-alerte graduée (« montée attendue jusqu'à 57 % »), serait la réponse ; c'est un choix
+   d'exploitation, pas encore tranché.
+
+Limite : `oracle` et `horaire` sont construits sur la vraie pluie du banc ; une prévision réelle se
+trompe aussi d'heure et d'intensité. Ces chiffres sont des bornes hautes du gain.
+
 ### 3.7 Cloud : un service de prévision pour des clients tiers
 
 **Clients d'API** (OAuth 2.0 « client credentials », RFC 6749 § 4.4). L'entité `Tenant`, présente
@@ -312,7 +356,16 @@ défaut : sans jeton vérifié dans la requête, rien n'est visible.
 - `overflowRisk` à chaque horizon : `P(niveau ≥ critique)` sous une erreur gaussienne dont l'écart
   type est l'**erreur mesurée** de la même méthode au même horizon (historique des prédictions,
   7 jours), extrapolée en √h au-delà du plus long horizon mesuré, prudente par défaut. L'origine de
-  l'écart type et les hypothèses (pluie constante) figurent dans chaque réponse.
+  l'écart type et les hypothèses figurent dans chaque réponse ;
+- pluie sur l'horizon : **prévision météo** quand elle est configurée (`FORECAST_WEATHER_PROVIDER=open-meteo`,
+  API publique sans clé, pas de 15 min, 3 h), raccordée à la pluie **mesurée** sur le site par un
+  poids `exp(−t/15 min)` (à l'instant présent le pluviomètre a raison, à une heure le modèle météo) ;
+  sinon persistance de la pluie des 10 dernières minutes. La réponse indique la source, l'heure et la
+  couverture de la prévision (`assumptions.rainOutlook`). Échelle : 20 mm/h valent 1
+  (`forecast.rain.full.mmh`), hypothèse à recaler sur le pluviomètre réel. Seule la position de la
+  station (arrondie à ~1 km) part vers le service ; une panne de celui-ci (délai 3 s, échec gardé
+  2 min) ramène à la persistance sans bloquer la réponse. **Désactivé par défaut** : avec le
+  simulateur, la pluie réelle de la zone n'a rien à voir avec la pluie simulée.
 
 `GET /api/intelligence/zones/{zone}/risk` résume la zone (risque à 30 min par station et
 pré-alertes de propagation en cours). Les pré-alertes de la passerelle deviennent des alertes
@@ -321,6 +374,21 @@ pré-alertes de propagation en cours). Les pré-alertes de la passerelle devienn
 **Amélioration continue.** Les prévisions du modèle réservoir sont enregistrées et évaluées comme
 celles de la régression linéaire : `/api/kpi/predictions` compare les deux sur les mêmes mesures
 réelles, et c'est cette erreur mesurée qui règle l'incertitude publiée aux clients.
+
+**Vérifié sur la pile Docker** (simulateur `season` en temps réel, 1 h) : les trois sites sont
+calibrés 35 min après le démarrage, à partir de la seule télémétrie (vrai a = 8, b = 0,3, g = 0,25 ;
+estimé a 7,93–7,97, b 0,297–0,300, g 0,246–0,250, R² 0,93–0,99), et les prévisions passent en
+`reservoir-calibrated`. Gain sur la persistance (« rien ne change »), chacun sur sa période :
+
+| Horizon | régression linéaire : erreur moyenne, gain | modèle réservoir : erreur moyenne, gain |
+|---|---|---|
+| 1 min | 0,96 cm, +0,30 | 0,78 cm, +0,03 |
+| 3 min | 3,98 cm, −0,11 | 2,12 cm, +0,03 |
+| 5 min | 6,46 cm, −0,30 | 3,28 cm, −0,01 |
+| 10 min | 8,72 cm, −0,32 | 4,93 cm, −0,03 |
+
+La régression linéaire fait pire que la persistance au-delà d'une minute ; le modèle réservoir la
+rejoint sans se dégrader. Une heure de mesures : c'est indicatif, pas une évaluation.
 
 ## 4. Feuille de route
 
@@ -333,7 +401,7 @@ réelles, et c'est cette erreur mesurée qui règle l'incertitude publiée aux c
 | 3. Fog | topologie, couplage simulé, calibration des sites, propagation règle + modèle | **fait** |
 | 4. Service client | clients OAuth à portée et zones, prévision multi-horizon avec risque mesuré | **fait** |
 | 5. Amélioration continue | deux modèles évalués en continu, erreur mesurée réinjectée dans le risque publié | **fait** (réentraînement automatique : non) |
-| 6. Prévision de pluie | entrée météo pour la propagation et la prévision | à faire |
+| 6. Prévision de pluie | entrée météo de la prévision du Cloud (raccord à la mesure) et des pré-alertes du fog (cascade) | **fait** (désactivé par défaut ; gain mesuré sur le banc, pas sur une vraie prévision) |
 
 ## 5. Limites assumées
 
@@ -344,6 +412,11 @@ réelles, et c'est cette erreur mesurée qui règle l'incertitude publiée aux c
   un second jeu d'hypothèses, hydrologie tirée au hasard à chaque épisode, et un format de
   lecture qu'un banc réel pourra alimenter tel quel (`summarize()` prend des échos mesurés).
   La station amont et les gains de couplage (0,25/min) sont des hypothèses de démonstration.
+- **Temps physique.** Temps de parcours, calibration du fog et prévisions sont en secondes réelles :
+  la pile Docker fait tourner le simulateur à `SIM_SPEED=1` (à vitesse 3, l'eau amont arriverait en
+  160 s alors que la passerelle la cherche 480 s plus tôt, et `g` serait faux). Le scénario `season`
+  y répète des orages de zone avec une réponse de site fixe : avec `storm`, il ne pleut qu'une fois au
+  démarrage et les stations aval, dont l'équation exige l'amont décalé, ne sont jamais calibrées.
 - **Firmware non compilé pour l'ESP32 dans cet environnement** : le cœur portable est compilé et
   testé sur le poste (g++ `-Wall -Wextra -Werror`), mais la chaîne Xtensa n'a pas pu être
   téléchargée. La tâche `firmware` de l'intégration continue le compile à chaque modification.
@@ -373,3 +446,9 @@ réelles, et c'est cette erreur mesurée qui règle l'incertitude publiée aux c
    sur le capteur décalé (4,2 % contre 29,3 %). Combien de fausses alertes vaut une lecture fausse
    manquée est un choix d'exploitation : une fois tranché, il s'écrit dans le critère de choix et
    le modèle est réentraîné, sans retoucher aux tests.
+5. **Quasi-crues au gué** (§ 3.6) : faut-il pré-alerter une station aval qui montera à 55 % ?
+   Une marge (pic projeté ≥ orange + 5 points) ou une pré-alerte graduée réduirait les 28–37
+   « infondées » du banc, au prix d'avance sur les vraies crues. À trancher avec l'exploitant.
+6. **Activer la météo** (`FORECAST_WEATHER_PROVIDER`, `GATEWAY_WEATHER_PROVIDER`) : uniquement avec
+   des stations réelles, après une comparaison de quelques semaines entre la pluie prévue et la
+   pluie mesurée (ce qui recalera aussi `forecast.rain.full.mmh`).
