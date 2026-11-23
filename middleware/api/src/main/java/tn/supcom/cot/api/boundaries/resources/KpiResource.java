@@ -5,8 +5,8 @@
  *  Fichier   : KpiResource.java
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Ksontini Amine
- *  Créé le   : 2026-11-02          Modifié le : 2026-11-02
- *  Version   : 1.0
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-23
+ *  Version   : 1.1
  * ============================================================================
  */
 package tn.supcom.cot.api.boundaries.resources;
@@ -17,6 +17,8 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import tn.supcom.cot.api.controllers.intelligence.LearnedForecaster;
+import tn.supcom.cot.api.controllers.intelligence.LearnedModel;
 import tn.supcom.cot.api.controllers.managers.KpiManager;
 import tn.supcom.cot.api.controllers.managers.PredictionHistory;
 import tn.supcom.cot.api.controllers.managers.StationManager;
@@ -25,6 +27,7 @@ import tn.supcom.cot.api.controllers.repositories.SensorDiagnosticRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -49,6 +52,8 @@ public class KpiResource {
     private StationManager stationManager;
     @Inject
     private SensorDiagnosticRepository diagnostics;
+    @Inject
+    private LearnedForecaster learned;
 
     @GET
     public Map<String, Object> get(@QueryParam("from") String from, @QueryParam("to") String to,
@@ -73,6 +78,36 @@ public class KpiResource {
         body.put("to", end.toString());
         body.put("horizons", predictionHistory.metrics(start, end));
         return body;
+    }
+
+    /**
+     * Cycle MLOps du modèle de prévision : champion (sert les prévisions s'il bat la méthode en
+     * place), challenger (évalué en ombre), journal des promotions et dernière surveillance (dérive des
+     * indicateurs, erreurs en service), tels que le service d'apprentissage les a publiés.
+     */
+    @GET
+    @Path("models")
+    public Map<String, Object> models() {
+        var snap = learned.models();
+        var body = new LinkedHashMap<String, Object>();
+        body.put("champion", describe(snap.champion()));
+        body.put("challenger", describe(snap.challenger()));
+        var reg = snap.registry();
+        body.put("registryUpdatedAt", reg == null || !reg.containsKey("updatedAt") ? null : reg.getString("updatedAt"));
+        body.put("events", reg == null || !reg.containsKey("events") ? List.of() : reg.getJsonArray("events"));
+        body.put("monitoring", reg == null || !reg.containsKey("monitoring") ? null : reg.get("monitoring"));
+        return body;
+    }
+
+    private static Map<String, Object> describe(LearnedModel m) {
+        if (m == null) return null;
+        var d = new LinkedHashMap<String, Object>();
+        d.put("modelId", m.modelId());
+        d.put("createdAt", m.createdAt());
+        d.put("datasetId", m.datasetId());
+        d.put("horizonsSec", m.horizonsSec());
+        d.put("offlineTestMetrics", m.metrics());
+        return d;
     }
 
     /**

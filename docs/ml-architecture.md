@@ -390,6 +390,52 @@ estimé a 7,93–7,97, b 0,297–0,300, g 0,246–0,250, R² 0,93–0,99), et le
 La régression linéaire fait pire que la persistance au-delà d'une minute ; le modèle réservoir la
 rejoint sans se dégrader. Une heure de mesures : c'est indicatif, pas une évaluation.
 
+### 3.8 Cycle MLOps : un modèle appris sur la télémétrie, promu sur ses résultats en service
+
+Jusqu'ici, aucun modèle de prévision n'était **appris** : la régression et le modèle réservoir sont
+des équations dont on estime quelques coefficients. Le cycle MLOps ajoute un modèle appris sur la
+télémétrie que la pile reçoit vraiment, et l'outillage qui le fait vivre.
+
+```
+PostgreSQL (mesures acceptées) ──► instantané versionné ──► apprentissage ──► critère hors ligne
+        ▲                           (empreinte SHA-256)      (arbres renforcés,   (battre persistance
+        │                                                     un par horizon)      ET tendance)
+        │                                                                              │ accepté
+ historique des prédictions ◄── API : challenger en OMBRE ◄── registre ◄───────────────┘
+ (notées sur les mesures)        champion en SERVICE        (registry.json + MLflow)
+        │                                ▲
+        └──► comparaison appariée ───────┘ promotion / rétrogradation ──► surveillance (dérive) ──► réapprentissage
+```
+
+| Étape | Où | Ce qui se passe |
+|---|---|---|
+| Données | `ml/forecast/data.py` | télémétrie **acceptée** par le middleware (14 jours) et topologie des stations, lues en lecture seule ; instantané immuable `datasets/<empreinte>/` |
+| Indicateurs | `features.py` ↔ `LearnedFeatures.java` | niveau médian sur 1 min, variations sur 1/2/5/10 min, pluie et moyennes 10/30 min, niveau amont et sa pente, **eau amont déjà mesurée qui arrive à t + h** ; mêmes valeurs à l'octet en Python et en Java (test de parité) |
+| Apprentissage | `model.py`, `pipeline.py` | un `GradientBoostingRegressor` par horizon (1, 3, 5, 10, 15, 30 min) qui prédit la **variation** du niveau ; découpage temporel 70/15/15 séparé de 30 min ; hyperparamètres choisis en validation |
+| Critère hors ligne | `pipeline.py` | à CHAQUE horizon, sur le test : erreur < persistance ET < tendance 2 min, ≥ 100 exemples, évaluateur exporté identique à scikit-learn. Sinon : exécution tracée, rien n'est déployé |
+| Registre | `registry.py`, MLflow | `models/registry.json` (champion, challenger, journal) sur un volume lu par l'API ; MLflow : paramètres, métriques, instantané, rapport, version du modèle enregistré et alias `challenger` / `champion` |
+| Service | `LearnedForecaster.java` | registre relu dès qu'il change ; le **challenger** n'est qu'enregistré dans l'historique des prédictions, le **champion** sert `GET /api/intelligence/.../forecast` seulement si son erreur mesurée en service est plus faible que celle de la méthode qu'il remplacerait |
+| Promotion | `pipeline.py evaluate` | comparaison **appariée** (mêmes stations, instants, horizons ; 24 h) ; ≥ 100 paires par horizon ; somme des erreurs plus faible, aucun horizon pire de plus de 5 %. Premier champion : doit battre la régression du moteur d'alerte **en service**. Un champion que la régression bat est retiré |
+| Surveillance | `pipeline.py monitor` | dérive des indicateurs (PSI) entre l'apprentissage du modèle en service et les dernières 24 h ; erreurs en service de chaque modèle ; publié dans le registre, MLflow et `GET /api/kpi/models` |
+| Réapprentissage | service `trainer` | toutes les 6 h, ou plus tôt sur dérive (PSI > 0,25) ; démarrage à froid sur 48 h simulées tant que la base compte moins de 12 h de télémétrie |
+
+**Lancement** : `docker compose --profile iot --profile ml up -d --build` (services `trainer` et
+`mlflow`). Interface MLflow : `http://127.0.0.1:5000` sur la machine (tunnel SSH depuis un poste).
+Hors pile : `cd ml && python -m forecast.pipeline train --source sim --hours 24`.
+
+**Résultat sur le banc** (24 h simulées, test = les 3,6 dernières heures, jamais vues) :
+
+| Horizon | modèle appris | persistance | tendance 2 min (régression) | gain sur la persistance |
+|---|---|---|---|---|
+| 1 min | 0,16 cm | 1,07 cm | 0,82 cm | +85 % |
+| 5 min | 1,70 cm | 4,13 cm | 5,56 cm | +59 % |
+| 10 min | 2,98 cm | 5,63 cm | 8,84 cm | +47 % |
+| 30 min | 4,08 cm | 5,89 cm | 10,66 cm | +31 % |
+
+**Limites.** Les données restent simulées (§ 5) : le modèle apprend la physique du simulateur. Le
+critère, la comparaison appariée et la surveillance sont en revanche ceux d'un déploiement réel, et
+s'appliqueront tels quels aux mesures des stations ESP32. Le modèle n'utilise pas la prévision météo.
+
 ## 4. Feuille de route
 
 | Phase | Contenu | État |
@@ -400,8 +446,9 @@ rejoint sans se dégrader. Une heure de mesures : c'est indicatif, pas une éval
 | 2. TinyML à l'edge | classifieur entraîné sur le banc, généré en C, intégré au firmware via le cœur portable | **fait** (compilation ESP32 à confirmer) |
 | 3. Fog | topologie, couplage simulé, calibration des sites, propagation règle + modèle | **fait** |
 | 4. Service client | clients OAuth à portée et zones, prévision multi-horizon avec risque mesuré | **fait** |
-| 5. Amélioration continue | deux modèles évalués en continu, erreur mesurée réinjectée dans le risque publié | **fait** (réentraînement automatique : non) |
+| 5. Amélioration continue | deux modèles évalués en continu, erreur mesurée réinjectée dans le risque publié | **fait** (réentraînement automatique : phase 7) |
 | 6. Prévision de pluie | entrée météo de la prévision du Cloud (raccord à la mesure) et des pré-alertes du fog (cascade) | **fait** (désactivé par défaut ; gain mesuré sur le banc, pas sur une vraie prévision) |
+| 7. Cycle MLOps | modèle appris sur la télémétrie, données versionnées, critère hors ligne, registre MLflow, évaluation en ombre, promotion sur résultats en service, surveillance de dérive, réapprentissage planifié | **fait** (§ 3.8) |
 
 ## 5. Limites assumées
 

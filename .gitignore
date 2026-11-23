@@ -17,3 +17,7 @@ figma_ai_demo/
 
 # Jeux de lectures du banc simulé : régénérables (backend/simulator/tools/sensor_bench.py)
 ml/datasets/
+
+# Cycle MLOps : dossier de travail local (instantanés, rapports, modèles) et suivi MLflow local
+ml/var/
+mlruns/

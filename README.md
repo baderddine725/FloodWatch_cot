@@ -111,6 +111,15 @@ calibration) : pré-alertes de propagation dès le premier orage, calibration de
 5 min, des stations aval après le deuxième épisode pluvieux (≈ 35 min), puis prévisions
 `reservoir-calibrated` sur `/api/intelligence`. Voir [`docs/ml-architecture.md`](docs/ml-architecture.md).
 
+**Cycle MLOps** (`--profile ml`) : le service `trainer` apprend un modèle de prévision sur la
+télémétrie de PostgreSQL (instantanés versionnés), le soumet à un critère d'acceptation, le publie
+comme challenger évalué en ombre sur les mesures réelles, le promeut champion s'il bat la méthode en
+place, surveille la dérive et réapprend ; MLflow trace tout (`http://127.0.0.1:5000`). État :
+`GET /api/kpi/models`. Détails : § 3.8 de [`docs/ml-architecture.md`](docs/ml-architecture.md).
+
+**En ligne, gratuitement** : Oracle Cloud « Always Free » (VM ARM) + nom DuckDNS + Let's Encrypt,
+en une commande (`backend/deploy/scripts/deploy-cloud.sh`) — § 0 de [`docs/deployment.md`](docs/deployment.md).
+
 ## Couverture du cahier des charges
 
 | Priorité | Fonctionnalité | État |

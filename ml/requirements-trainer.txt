@@ -1,0 +1,5 @@
+# FloodWatch – service d'apprentissage (cycle MLOps de la prévision) – dépendances (Guesmi Baderddine, v1.0, 2026-11-23)
+# Celles de l'apprentissage (versions figées) + l'accès PostgreSQL et le client MLflow (sans le serveur).
+-r requirements.txt
+psycopg[binary]==3.3.8
+mlflow-skinny==3.16.1

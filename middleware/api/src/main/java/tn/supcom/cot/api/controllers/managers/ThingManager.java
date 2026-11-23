@@ -5,8 +5,8 @@
  *  Fichier   : ThingManager.java
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Guesmi Baderddine
- *  Créé le   : 2026-11-02          Modifié le : 2026-11-02
- *  Version   : 1.0
+ *  Créé le   : 2026-11-02          Modifié le : 2026-11-23
+ *  Version   : 1.1
  * ============================================================================
  */
 package tn.supcom.cot.api.controllers.managers;
@@ -68,6 +68,8 @@ public class ThingManager {
     private PredictionHistory predictionHistory;
     @Inject
     private ForecastService forecasts;
+    @Inject
+    private tn.supcom.cot.api.controllers.intelligence.LearnedForecaster learned;
 
     private final AlertEngine engine = new AlertEngine();
 
@@ -146,6 +148,18 @@ public class ThingManager {
                 double[] seconds = java.util.Arrays.stream(horizons).asDoubleStream().toArray();
                 forecasts.reservoirLevels(station, seconds, now).ifPresent(levels -> predictionHistory.recordLevels(
                         station.getId(), ForecastService.RESERVOIR, now, station.getLevelCm(), horizons, levels));
+                // modèles appris (cycle MLOps) : champion ET challenger, notés sur les mêmes mesures ;
+                // c'est cette comparaison appariée qui décide des promotions (ml/forecast/pipeline.py)
+                var ml = learned.models();
+                if (ml.champion() != null || ml.challenger() != null) {
+                    var ctx = learned.context(station, now);
+                    for (var m : new tn.supcom.cot.api.controllers.intelligence.LearnedModel[]{ml.champion(), ml.challenger()}) {
+                        if (m == null) continue;
+                        learned.levels(ctx, m, horizons).ifPresent(levels -> predictionHistory.recordLevels(
+                                station.getId(), m.modelId(), now, learned.baseLevel(ctx).orElse(station.getLevelCm()),
+                                horizons, levels));
+                    }
+                }
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "Prediction history unavailable for " + code, e);
             }

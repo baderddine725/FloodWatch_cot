@@ -41,6 +41,14 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
         </dependency>
+        <!-- implémentation JSON-P pour les tests seulement (WildFly fournit la sienne) : lecture des
+             modèles appris et des données de parité Python / Java -->
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <version>1.1.7</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <!-- Pas de <finalName> : l'artefact garde le nom « api-1.0.war », attendu par

@@ -1,0 +1,11 @@
+# Contexte = racine du dépôt : on n'envoie au démon que ce que ml/Dockerfile copie.
+*
+!backend/simulator/requirements.txt
+!backend/simulator/fwsim/**
+!backend/simulator/tools/**
+!backend/gateway/stations.json
+!ml/requirements.txt
+!ml/requirements-trainer.txt
+!ml/forecast/**
+!ml/river/**
+**/__pycache__

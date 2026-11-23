@@ -20,6 +20,15 @@ components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }
   schemas:
+    LearnedModel:
+      type: object
+      nullable: true
+      properties:
+        modelId: { type: string, example: gbt-202611231700-40a4ed }
+        createdAt: { type: string, format: date-time }
+        datasetId: { type: string, description: empreinte de l'instantané de données d'apprentissage }
+        horizonsSec: { type: array, items: { type: integer } }
+        offlineTestMetrics: { type: object, additionalProperties: true, description: erreurs sur le test (modèle, persistance, tendance) par horizon }
     PredictionMetrics:
       type: object
       properties:
@@ -349,6 +358,47 @@ paths:
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
       responses: { '200': { description: OK } }
+  /kpi/models:
+    get:
+      tags: [KPI]
+      security: [{ bearer: [] }]
+      summary: Cycle MLOps du modèle de prévision appris (OPERATOR)
+      description: >
+        Champion (sert les prévisions s'il bat, en service, la méthode en place) et challenger (évalué
+        en ombre sur les mesures réelles), journal des promotions et dernière surveillance (dérive des
+        indicateurs, erreurs en service), tels que publiés par le service d'apprentissage. `null` :
+        aucun modèle de ce rôle.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  champion: { $ref: '#/components/schemas/LearnedModel' }
+                  challenger: { $ref: '#/components/schemas/LearnedModel' }
+                  registryUpdatedAt: { type: string, format: date-time, nullable: true }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        event: { type: string, enum: [challenger, promoted, demoted, rejected-offline, rejected-live] }
+                        model: { type: string }
+                      additionalProperties: true
+                  monitoring:
+                    type: object
+                    nullable: true
+                    properties:
+                      at: { type: string, format: date-time }
+                      model: { type: string, nullable: true }
+                      psi: { type: object, additionalProperties: { type: number } }
+                      drift: { type: boolean }
+                      live: { type: array, items: { type: object, additionalProperties: true } }
+        '401': { description: Non authentifié }
+        '403': { description: Rôle insuffisant }
   /kpi/predictions:
     get:
       tags: [KPI]

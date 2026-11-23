@@ -6,7 +6,7 @@
  *  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
  *  Auteur    : Guesmi Baderddine
  *  Créé le   : 2026-11-17          Modifié le : 2026-11-23
- *  Version   : 1.1
+ *  Version   : 1.2
  * ============================================================================
  */
 package tn.supcom.cot.api.controllers.intelligence;
@@ -63,6 +63,8 @@ public class ForecastService {
     private WeatherService weather;
     @Inject
     private PredictionRepository predictions;
+    @Inject
+    private LearnedForecaster learned;
 
     public record Horizon(int minutes, double levelCm, double levelPct, double overflowRisk, double sigmaCm,
                           String sigmaBasis) {
@@ -118,6 +120,24 @@ public class ForecastService {
         });
 
         var errors = measuredRmse(method, now);
+        // modèle appris : le champion ne sert que s'il fait MIEUX, mesuré en service, que la méthode
+        // qu'il remplacerait (erreur quadratique moyenne sur les horizons notés des deux)
+        boolean learnedUsed = false;
+        var champion = learned == null ? null : learned.models().champion();
+        if (champion != null) {
+            var champErrors = measuredRmse(champion.modelId(), now);
+            if (beats(champErrors, errors)) {
+                int[] sec = new int[horizonsMin.length];
+                for (int i = 0; i < sec.length; i++) sec[i] = horizonsMin[i] * 60;
+                var ml = learned.levels(learned.context(s, now), champion, sec);
+                if (ml.isPresent()) {
+                    method = champion.modelId();
+                    levels = ml.get();
+                    errors = champErrors;
+                    learnedUsed = true;
+                }
+            }
+        }
         var out = new ArrayList<Horizon>();
         double worst = 0.0;
         for (int i = 0; i < horizonsMin.length; i++) {
@@ -138,6 +158,13 @@ public class ForecastService {
             assumptions.put("rain", "constante sur l'horizon (persistance de la pluie des 10 dernières minutes)");
         }
         assumptions.put("rainNow", round(recentRain(s, now)));
+        if (learnedUsed) {
+            assumptions.put("model", "arbres renforcés par gradient appris sur la télémétrie (champion du cycle "
+                    + "MLOps, instantané " + champion.datasetId() + "), préféré car son erreur mesurée en service "
+                    + "est la plus faible");
+            assumptions.put("rain", "historique de pluie mesurée des 30 dernières minutes (le modèle n'utilise "
+                    + "pas de prévision météo)");
+        }
         if (RESERVOIR.equals(method) && s.getUpstreamLinks() != null && !s.getUpstreamLinks().isBlank()) {
             assumptions.put("upstream", "niveaux amont mesurés pendant le temps de parcours, constants au-delà");
         }
@@ -233,6 +260,27 @@ public class ForecastService {
             out.put(((Number) r[1]).intValue() / 60, ((Number) r[5]).doubleValue());
         }
         return out;
+    }
+
+    /**
+     * Le modèle candidat a-t-il fait ses preuves contre la méthode en place ? Il doit être noté (sinon
+     * non) ; si la méthode en place ne l'est pas encore, ses mesures suffisent (il a déjà battu la
+     * régression en service pour devenir champion) ; sinon moyenne des RMSE plus faible sur les
+     * horizons notés des deux.
+     */
+    static boolean beats(Map<Integer, Double> candidate, Map<Integer, Double> incumbent) {
+        if (candidate.isEmpty()) return false;
+        double c = 0.0;
+        double i = 0.0;
+        int n = 0;
+        for (var e : candidate.entrySet()) {
+            Double other = incumbent.get(e.getKey());
+            if (other == null) continue;
+            c += e.getValue();
+            i += other;
+            n++;
+        }
+        return n == 0 ? incumbent.isEmpty() : c < i;
     }
 
     static Sigma sigmaFor(Map<Integer, Double> rmseByMin, int horizonMin) {
