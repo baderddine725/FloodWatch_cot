@@ -5,8 +5,8 @@
 #  Fichier   : ml/sensor_anomaly/train.py
 #  Équipe    : FloodWatch (Guesmi Baderddine, Ksontini Amine, Kamoun Ahmed)
 #  Auteur    : Guesmi Baderddine
-#  Créé le   : 2026-11-17          Modifié le : 2026-11-17
-#  Version   : 1.0
+#  Créé le   : 2026-11-17          Modifié le : 2026-11-23
+#  Version   : 1.1
 # =============================================================================
 """Entraîne, évalue et exporte le classifieur embarqué de validité du capteur.
 
@@ -337,6 +337,27 @@ def run(out_dir: Path) -> dict:
     return report
 
 
+# Mesures qui dépendent du compilateur de la machine (gcc 13 sur GitHub, 14 en local), pas du modèle :
+# ignorées quand --check compare le rapport régénéré au rapport versionné.
+MACHINE_DEPENDENT = ("text_bytes_x86_Os",)
+
+
+def _without_machine_fields(node):
+    if isinstance(node, dict):
+        return {k: _without_machine_fields(v) for k, v in node.items() if k not in MACHINE_DEPENDENT}
+    if isinstance(node, list):
+        return [_without_machine_fields(v) for v in node]
+    return node
+
+
+def same_export(name: str, committed: Path, fresh: Path) -> bool:
+    """Modèle (en-tête C, JSON) : identique à l'octet. Rapport : identique hors mesures de la machine."""
+    if name != REPORT:
+        return committed.read_bytes() == fresh.read_bytes()
+    load = lambda p: _without_machine_fields(json.loads(p.read_text(encoding="utf-8")))
+    return load(committed) == load(fresh)
+
+
 def gate(report: dict) -> list[str]:
     """Critères d'acceptation du modèle exporté ; renvoie les manquements (vide = accepté)."""
     problems = []
@@ -421,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
         show(report)
         problems = gate(report)
         for name, committed in DESTINATIONS.items():
-            if not committed.is_file() or committed.read_bytes() != (out / name).read_bytes():
+            if not committed.is_file() or not same_export(name, committed, out / name):
                 problems.append(f"{committed.relative_to(REPO).as_posix()} n'est pas à jour : "
                                 f"relancer python ml/sensor_anomaly/train.py")
     if problems:
